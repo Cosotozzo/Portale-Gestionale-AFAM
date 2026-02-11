@@ -695,3 +695,12 @@ function syncExportTable() {
     lock.releaseLock();
   }
 }
+
+/**
+ * FUNZIONE DI TEST SINCRONIZZAZIONE
+ * Questo è un commento per verificare che Gemini legga l'ultima versione.
+ */
+function testSincronizzazioneGemini() {
+  Logger.log("Sincronizzazione completata con successo!");
+  return "Il collegamento GitHub-Gemini funziona!";
+}
