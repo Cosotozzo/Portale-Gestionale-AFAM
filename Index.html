@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Portale Gestionale AFAM - MUR</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-italia@2.9.0/dist/css/bootstrap-italia.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+      /* --- PALETTE & CUSTOMIZATION --- */
+      :root {
+        --header-main-bg: #0066cc; 
+        --footer-bg: #2f353a;      
+        --footer-link: #6dc7d0;    
+        --mur-cyan: #00c7d4;
+        --mur-pink: #e2007a;
+        --mur-yellow: #cfd30d;
+        --bg-page: #f2f4f7;
+      }
+      body { font-family: 'Titillium Web', sans-serif; background-color: var(--bg-page); display: flex; flex-direction: column; min-height: 100vh; }
+      .main-container { flex: 1 0 auto; }
+      
+      /* UTILS */
+      .rounded-custom { border-radius: 12px !important; overflow: hidden; }
+      .table-rounded { border-radius: 12px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
+      .hidden { display: none !important; }
+      .spinner-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.95); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+
+      /* STATS BOX ALIGNMENT FIX */
+      .stat-box-content {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          height: 100%;
+          min-height: 100px;
+      }
+      .stat-number { font-size: 2.5rem; font-weight: 700; line-height: 1.2; margin-top: 10px; }
+      .stat-label { font-size: 0.85rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+
+      /* --- FIX CHECKBOX: RIMOZIONE TOTALE STILE SWITCH --- */
+      
+      /* 1. Stile Base per il Checkbox (Sempre Quadrato) */
+      #chk-nuova-finestra {
+          width: 1.5em !important;      /* Dimensione */
+          height: 1.5em !important;     /* Dimensione */
+          border-radius: 0.25em !important; /* Angoli appena smussati (NON OVALI) */
+          margin-top: 0 !important;
+          
+          /* Rimuoviamo qualsiasi immagine di sfondo residua (tipo pallini o pillole) */
+          background-image: none !important; 
+          background-color: #fff !important;
+          border: 1px solid #adb5bd !important;
+          
+          /* Reset visualizzazione nativa */
+          -webkit-appearance: none;
+          appearance: none;
+          position: relative; /* Serve per gestire il rendering pulito */
+      }
+
+      /* 2. Stile QUANDO SELEZIONATO (Sia Attivo che Disabilitato/Read-Only) */
+      #chk-nuova-finestra:checked {
+          background-color: var(--header-main-bg) !important; /* Blu Ministero */
+          border-color: var(--header-main-bg) !important;
+          opacity: 1 !important; /* Mantiene il colore vivo anche se disabilitato */
+          
+          /* Disegniamo esplicitamente la SPUNTA (V) bianca standard */
+          /* Questo sovrascrive qualsiasi vecchio pallino che potrebbe comparire */
+          background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e") !important;
+          background-size: contain !important;
+          background-position: center !important;
+          background-repeat: no-repeat !important;
+      }
+
+      /* 3. Pulizia extra per lo stato Disabilitato */
+      #chk-nuova-finestra:disabled {
+          box-shadow: none !important; /* Rimuove ombre o aloni blu */
+          filter: none !important;     /* Rimuove filtri grigi di Bootstrap */
+      }
+
+      /* HEADER & NAV */
+      .it-header-center-wrapper { background-color: var(--header-main-bg) !important; padding: 20px 0; border-bottom: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+      .nav-breadcrumb { background-color: white; border-bottom: 1px solid #e0e0e0; padding: 10px 0; margin-bottom: 30px; }
+      .btn-back-link { color: #555; font-weight: 600; text-decoration: none; font-size: 0.95rem; display: inline-flex; align-items: center; cursor: pointer; background: none; border: none; padding: 0; }
+      .btn-back-link:hover { color: var(--header-main-bg); text-decoration: none; }
+      
+      .user-badge { background-color: rgba(255,255,255,0.15); padding: 6px 18px; border-radius: 30px; color: white; font-weight: 700; display: flex; align-items: center; text-transform: uppercase; font-size: 0.85rem; cursor: pointer; transition: background 0.2s; }
+      .user-badge:hover { background-color: rgba(255,255,255,0.25); }
+
+      /* LOGOS & CARDS */
+      .brand-container { display: flex; align-items: center; text-decoration: none !important; }
+      .mur-logo-container { position: relative; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; margin-right: 15px; }
+      .mur-logo-ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; background: conic-gradient(transparent 0deg 180deg, var(--mur-cyan) 180deg 250deg, var(--mur-pink) 250deg 340deg, transparent 340deg 360deg); transform: rotate(-45deg); mask: radial-gradient(farthest-side, transparent calc(100% - 4px), black calc(100% - 4px)); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), black calc(100% - 4px)); }
+      .mur-logo-ring-yellow { position: absolute; width: 100%; height: 100%; border-radius: 50%; background: conic-gradient(transparent 0deg 180deg, var(--mur-yellow) 180deg 250deg, transparent 250deg 360deg); transform: rotate(100deg); mask: radial-gradient(farthest-side, transparent calc(100% - 4px), black calc(100% - 4px)); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), black calc(100% - 4px)); }
+      .mur-emblem-svg { width: 30px; height: 30px; fill: white; }
+      .brand-ministero { font-weight: 700; font-size: 1.3rem; line-height: 1.1; color: white; margin-bottom: 2px; }
+      .brand-portal { font-weight: 400; font-size: 1.1rem; color: rgba(255,255,255,0.9); border-top: 1px solid rgba(255,255,255,0.3); padding-top: 2px; display: inline-block; }
+      
+      .module-card { background: white; border: none; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.3s; cursor: pointer; height: 100%; border-bottom: 4px solid var(--header-main-bg); }
+      .module-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(0,68,136,0.15); border-bottom-color: var(--mur-cyan); }
+      .card-body { padding: 2rem; text-align: center; }
+      .card-icon { font-size: 2.5rem; color: var(--header-main-bg); margin-bottom: 1rem; }
+
+    /* --- FIX TABELLA ADMIN: TITOLI FERMI E RIGHE SCORREVOLI --- */
+      
+      /* 1. Definiamo l'area "finestra" che contiene i dati */
+      #view-module-cessazioni-admin .table-responsive {
+          height: 65vh !important;      /* Altezza fissa (circa 65% dello schermo) */
+          overflow-y: auto !important;  /* Obbliga la comparsa della barra di scorrimento QUI */
+          border: 1px solid #dee2e6;    /* Un bordo per delimitare l'area di scroll */
+          background-color: #fff;       /* Sfondo bianco */
+          display: block;               /* Fix per rendere il div comportante come blocco */
+      }
+
+      /* 2. Blocchiamo i titoli in alto */
+      #view-module-cessazioni-admin thead th {
+          position: sticky !important;
+          top: 0 !important;            /* Si incolla al bordo superiore del box */
+          z-index: 1000 !important;     /* Livello altissimo per stare sopra a tutto */
+          
+          /* STILE VISIVO: Sfondo opaco (CRUCIALE) */
+          background-color: #e9ecef !important; /* Grigio chiaro pieno, NON trasparente */
+          color: #495057;
+          
+          /* Ombreggiatura sotto il titolo per dare l'effetto di "distacco" dalle righe */
+          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); 
+          
+          /* Rimuovi bordi che potrebbero creare artefatti */
+          border-top: none !important;
+      }
+      
+      /* Fix opzionale: se le righe si vedono in trasparenza, forza il background delle righe */
+      #tbody-admin-report tr {
+          background-color: #fff;
+      }
+      
+      /* Note Textarea con focus visibile */
+      .note-textarea { 
+        resize: none; 
+        font-size: 0.9rem; 
+        border: 1px solid #ced4da; 
+        color: #333; 
+        transition: all 0.2s ease-in-out;
+        overflow: hidden; /* Nasconde scrollbar brutte */
+        min-height: 38px;
+      }
+      .note-textarea:focus {
+        min-height: 80px; /* Espansione al focus */
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+        z-index: 10; /* Porta in primo piano */
+        position: relative;
+      }
+      .note-textarea:disabled { background-color: #f8f9fa; border-color: #e9ecef; cursor: not-allowed; opacity: 0.8; color: #6c757d; }
+      /* FINE MODIFICA */
+      
+      .login-card { border: none; box-shadow: 0 10px 40px rgba(0,0,0,0.1); border-radius: 16px; overflow: hidden; }
+      .btn-login { background-color: var(--header-main-bg); color: white; font-weight: 700; border: none; padding: 12px; font-size: 1.1rem; width: 100%; border-radius: 8px; }
+      .footer-mur { background-color: var(--footer-bg); color: white; padding: 30px 0; margin-top: auto; }
+    </style>
+  </head>
+  <body>
+
+    <div id="loading" class="spinner-overlay hidden">
+      <div class="d-flex flex-column align-items-center">
+         <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+         <div class="mt-3 fw-bold" style="color: var(--header-main-bg)">Elaborazione in corso...</div>
+      </div>
+    </div>
+
+    <div class="toast-container position-fixed start-50 translate-middle-x p-3" style="z-index: 1100; top: 15%;">
+       <div id="liveToast" class="toast align-items-center text-white border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+         <div class="d-flex">
+           <div class="toast-body fw-bold fs-6" id="toast-message"></div>
+           <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+         </div>
+       </div>
+    </div>
+
+    <header>
+      <div class="it-header-center-wrapper">
+        <div class="container">
+          <div class="row align-items-center">
+            <div class="col-6 d-flex align-items-center">
+                <a href="https://www.mur.gov.it/it" target="_blank" class="brand-container">
+                  <div class="mur-logo-container">
+                     <div class="mur-logo-ring"></div>
+                     <div class="mur-logo-ring-yellow"></div>
+                     <svg class="mur-emblem-svg icon"><use href="https://cdn.jsdelivr.net/npm/bootstrap-italia@2.9.0/dist/svg/sprites.svg#it-pa"></use></svg>
+                  </div>
+                  <div class="brand-text-block">
+                    <div class="brand-ministero">Ministero dell'Università<br>e della Ricerca</div>
+                    <div class="brand-portal">Portale Gestionale A.F.A.M.</div>
+                  </div>
+                </a>
+            </div>
+            <div class="col-6 d-flex justify-content-end align-items-center">
+               <div id="user-area" class="dropdown hidden">
+                 <a href="#" class="user-badge text-decoration-none dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                   <i class="fas fa-user-circle me-2"></i> <span id="nav-user-name">Utente</span>
+                 </a>
+                 <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
+                   <li><button class="dropdown-item text-danger fw-bold" type="button" onclick="openGenericModal('LOGOUT')"><i class="fas fa-sign-out-alt me-2"></i>Esci</button></li>
+                 </ul>
+               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="nav-breadcrumb hidden" id="sub-nav-bar">
+      <div class="container">
+         <div class="d-flex justify-content-start">
+             <button type="button" onclick="showView('view-gateway')" class="btn-back-link">
+                <i class="fas fa-arrow-left me-2"></i> Torna alla Dashboard
+             </button>
+         </div>
+      </div>
+    </div>
+
+<main class="main-container container my-5">
+
+      <div id="view-login" class="view-section">
+         <div class="row justify-content-center align-items-center" style="min-height: 70vh;">
+          <div class="col-12 col-md-6 col-lg-5">
+            <div class="card login-card bg-white p-5">
+               <h3 class="text-center mb-4 fw-bold" style="color: var(--header-main-bg);">Accedi al Servizio</h3>
+               <form id="login-form">
+                  <div class="form-floating mb-3">
+                    <input type="email" class="form-control" name="username" id="floatingInput" placeholder="name@example.com" required>
+                    <label for="floatingInput">Email Istituzionale</label>
+                  </div>
+                  <div class="form-floating mb-4">
+                    <input type="password" class="form-control" name="password" id="floatingPassword" placeholder="Password" required>
+                    <label for="floatingPassword">Password</label>
+                  </div>
+                  <button type="submit" class="btn-login">ACCEDI</button>
+               </form>
+               <div class="mt-4 text-center">
+                 <a href="#" onclick="event.preventDefault(); goToRegister()" class="text-decoration-none fw-bold" style="color: var(--header-main-bg);">Registrati</a>
+                 <span class="mx-2 text-muted">|</span>
+                 <a href="#" onclick="event.preventDefault(); goToReset()" class="text-muted text-decoration-underline">Password dimenticata?</a>
+               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-register" class="view-section hidden">
+        <div class="row justify-content-center">
+          <div class="col-12 col-md-8">
+            <div class="card login-card bg-white p-5">
+              <h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Richiesta Nuova Utenza</h4>
+              <form id="register-form">
+                <div class="mb-3"><label class="form-label small fw-bold text-muted">ISTITUZIONE</label><select id="institution-select" class="form-select" required><option value="">Seleziona...</option></select></div>
+                <div class="row"><div class="col-md-6 mb-3"><input type="text" class="form-control" id="reg-name" placeholder="Nome" required></div><div class="col-md-6 mb-3"><input type="text" class="form-control" id="reg-surname" placeholder="Cognome" required></div></div>
+                <div class="mb-3"><input type="text" class="form-control" id="reg-cf" placeholder="Codice Fiscale" style="text-transform:uppercase" required></div>
+                <div class="mb-3"><input type="email" class="form-control" id="reg-email" placeholder="Email" required></div>
+                <div class="mb-3"><input type="text" class="form-control border-warning" id="reg-pin" placeholder="PIN (6 char)" maxlength="6" style="text-transform:uppercase" required></div>
+                <div class="row"><div class="col-md-6 mb-3"><input type="password" class="form-control" id="reg-pass" placeholder="Password" required></div><div class="col-md-6 mb-4"><input type="password" class="form-control" id="reg-pass-conf" placeholder="Conferma Password" required></div></div>
+                <div class="d-flex justify-content-between"><button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button><button type="button" class="btn-login w-auto px-5" onclick="submitRegistration()">Invia</button></div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-reset" class="view-section hidden">
+         <div class="row justify-content-center">
+          <div class="col-12 col-md-6 col-lg-5">
+            <div class="card login-card bg-white p-5">
+              <h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Reset Password</h4>
+              <form id="reset-form">
+                <div class="mb-3"><select id="reset-institution" class="form-select" required><option value="">Seleziona...</option></select></div>
+                <div class="mb-3"><input type="text" class="form-control" id="reset-cf" placeholder="CF" required></div>
+                <div class="mb-3"><input type="email" class="form-control" id="reset-email" placeholder="Email" required></div>
+                <div class="mb-3"><input type="text" class="form-control" id="reset-pin" placeholder="PIN" required></div>
+                <div class="mb-3"><input type="password" class="form-control" id="reset-new-pass" placeholder="Nuova Password" required></div>
+                <div class="d-flex justify-content-between"><button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button><button type="button" class="btn-login w-50" onclick="submitReset()">Salva</button></div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-gateway" class="view-section hidden">
+         <h2 class="mb-5 fw-bold" style="color: var(--header-main-bg); border-left: 5px solid var(--mur-cyan); padding-left: 15px;">Dashboard Servizi</h2>
+         <div class="row g-4">
+            <div class="col-md-6 col-lg-3">
+               <div class="module-card" onclick="handleModuleAccess('CESSAZIONI')">
+                 <div class="card-body">
+                    <i class="fas fa-user-times card-icon"></i>
+                    <h5 class="card-title">Cessazioni</h5>
+                    <p class="card-text">Validazione cessazioni.</p>
+                 </div>
+               </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="module-card" onclick="handleModuleAccess('RCA')">
+                    <div class="card-body">
+                        <i class="fas fa-users-cog card-icon"></i>
+                        <h5 class="card-title">R.C.A.</h5>
+                        <p class="card-text">In Manutenzione</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="module-card" onclick="handleModuleAccess('BUDGET_ORG')">
+                    <div class="card-body">
+                        <i class="fas fa-chart-pie card-icon"></i>
+                        <h5 class="card-title">Budget Org.</h5>
+                        <p class="card-text">Disponibile a breve</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="module-card" onclick="handleModuleAccess('BUDGET_ASS')">
+                    <div class="card-body">
+                        <i class="fas fa-briefcase card-icon"></i>
+                        <h5 class="card-title">Budget Ass.</h5>
+                        <p class="card-text">Disponibile a breve</p>
+                    </div>
+                </div>
+            </div>
+         </div>
+      </div>
+
+      <div id="view-module-cessazioni" class="view-section hidden">
+         <div class="card border-0 shadow-sm mb-4 rounded-custom">
+            <div class="card-body p-4">
+               <div class="d-flex justify-content-between align-items-start mb-4 border-bottom pb-3">
+                   <div>
+                       <h4 class="fw-bold text-primary mb-1 text-uppercase" id="cess-denom-ist">Caricamento...</h4>
+                       <div class="text-muted">Anno Accademico <span id="dynamic-aa" class="fw-bold text-dark">...</span></div>
+                   </div>
+                   <div><span id="cess-status-badge" class="badge rounded-pill bg-secondary px-4 py-2 fs-6">...</span></div>
+               </div>
+               
+               <div class="row g-3 text-center">
+                   <div class="col">
+                       <div class="rounded bg-light border h-100 stat-box-content">
+                           <div class="stat-label text-muted">Totale</div>
+                           <div class="stat-number text-dark" id="stat-total">-</div>
+                       </div>
+                   </div>
+                   <div class="col">
+                        <div class="rounded bg-success bg-opacity-10 border border-success h-100 stat-box-content">
+                           <div class="stat-label text-success">Approvati</div>
+                           <div class="stat-number text-success" id="stat-approved">-</div>
+                       </div>
+                   </div>
+                   <div class="col">
+                        <div class="rounded bg-danger bg-opacity-10 border border-danger h-100 stat-box-content">
+                           <div class="stat-label text-danger">Rifiutati</div>
+                           <div class="stat-number text-danger" id="stat-rejected">-</div>
+                       </div>
+                   </div>
+                   <div class="col">
+                        <div class="rounded bg-warning bg-opacity-10 border border-warning h-100 stat-box-content">
+                           <div class="stat-label text-warning text-dark">Modificati</div>
+                           <div class="stat-number text-dark" id="stat-modified">-</div>
+                       </div>
+                   </div>
+                   <div class="col">
+                        <div class="rounded bg-secondary bg-opacity-10 border h-100 stat-box-content">
+                           <div class="stat-label text-secondary">Da Validare</div>
+                           <div class="stat-number text-secondary" id="stat-pending">-</div>
+                       </div>
+                   </div>
+               </div>
+            </div>
+         </div>
+
+         <div class="card border-0 shadow-sm rounded-custom mb-4">
+            <div class="table-responsive">
+               <table class="table table-hover align-middle mb-0 table-rounded">
+                  <thead class="table-light text-uppercase small text-muted">
+                     <tr><th>Nominativo</th><th>CF</th><th>Nascita</th><th>Età</th><th class="text-center">Validazione</th><th style="width:250px">Note</th></tr>
+                  </thead>
+                  <tbody id="tbody-cessazioni"></tbody>
+               </table>
+            </div>
+         </div>
+
+         <div class="d-flex flex-column align-items-end mb-5">
+              
+              <div id="chk-container" class="mb-4 p-3 bg-white shadow-sm rounded-custom border w-100 d-flex align-items-center">
+                
+                <input type="checkbox" id="chk-nuova-finestra" 
+                       style="width: 1.5em; height: 1.5em; margin-right: 15px; margin-left: 5px; cursor: pointer; border: 1px solid #adb5bd; border-radius: 4px; appearance: none; -webkit-appearance: none; outline: none !important; box-shadow: none !important; flex-shrink: 0;">
+                
+                <label class="fw-bold text-dark m-0" for="chk-nuova-finestra" style="cursor: pointer; user-select: none;">
+                   Richiedo l'apertura di una nuova finestra di cessazioni per ulteriori inserimenti.
+                </label>
+
+                <style>
+                    #chk-nuova-finestra:checked {
+                        background-color: #0066cc !important;
+                        border-color: #0066cc !important;
+                        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e") !important;
+                        background-size: contain;
+                        background-position: center;
+                        background-repeat: no-repeat;
+                    }
+                </style>
+             </div>
+
+              <div id="btn-container" class="d-flex gap-3">
+                  <button class="btn btn-outline-dark rounded-pill px-4 py-2 fw-bold" onclick="saveCessazioniAction('DRAFT')">
+                      <i class="far fa-save me-2"></i>Salva Bozza
+                  </button>
+                  
+                  <button class="btn btn-success rounded-pill px-5 py-2 fw-bold shadow" onclick="saveCessazioniAction('FINAL')">
+                      Conferma e Invia <i class="fas fa-paper-plane ms-2"></i>
+                  </button>
+              </div>
+         </div>
+      </div> <div id="view-module-cessazioni-admin" class="view-section hidden">
+         <div class="d-flex justify-content-between align-items-center mb-4">
+             <div>
+               <h3 class="fw-bold" style="color: var(--header-main-bg);">Monitoraggio Cessazioni</h3>
+               <p class="text-muted">Report riepilogativo stato avanzamento Istituzioni.</p>
+             </div>
+             <button class="btn btn-primary btn-sm rounded-pill" onclick="loadCessazioniData()">
+                <i class="fas fa-sync-alt me-2"></i>Aggiorna Dati
+             </button>
+         </div>
+
+         <div class="card border-0 shadow-sm rounded-custom">
+            <div class="table-responsive">
+               <table class="table table-hover align-middle mb-0 table-rounded">
+                  <thead class="table-light text-uppercase small text-muted">
+                     <tr>
+                        <th>Istituzione</th>
+                        <th class="text-center">Stato</th>
+                        <th class="text-center">Totale</th>
+                        <th class="text-center text-success">Appr.</th>
+                        <th class="text-center text-warning">Mod.</th>
+                        <th class="text-center text-danger">Rif.</th>
+                        <th class="text-center text-secondary">Pend.</th>
+                        <th class="text-center">Nuova Finestra</th>
+                     </tr>
+                  </thead>
+                  <tbody id="tbody-admin-report">
+                     </tbody>
+               </table>
+            </div>
+         </div>
+      </div>
+      
+    </main>
+
+    <footer class="footer-mur"><div class="container"><div class="text-center text-white small">Ministero dell'Università e della Ricerca - © 2026</div></div></footer>
+
+    <div class="modal fade" id="genericModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-custom border-0 shadow-lg">
+          <div class="modal-header border-0 position-relative d-flex justify-content-center align-items-center p-3" style="min-height: 80px;" id="modal-header-bg">
+            <h5 class="modal-title fw-bold m-0 d-flex align-items-center" id="modal-title">...</h5>
+            <button type="button" class="btn-close btn-close-white position-absolute end-0 me-3 top-50 translate-middle-y" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4 text-center">
+             <p class="fs-5" id="modal-body-text">...</p>
+             <p class="text-muted small" id="modal-sub-text"></p>
+          </div>
+          <div class="modal-footer justify-content-center border-0 pb-4">
+            <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Annulla</button>
+            <button type="button" class="btn rounded-pill px-5 fw-bold text-white" id="modal-confirm-btn">Conferma</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <?!= include('JavaScript'); ?>
+  </body>
+</html>

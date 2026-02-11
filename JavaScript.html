@@ -1,0 +1,407 @@
+<script>
+  /**
+   * PORTALE GESTIONALE AFAM
+   * Versione: 15.5 (Final: Admin Dashboard Integrated)
+   */
+
+  let currentUser = {};
+  let allInstitutions = [];
+  let cessazioniData = [];
+  let cessazioniReadOnly = false;
+  let genericModalInstance = null;
+
+  const MODULES_CONFIG = {
+    'RCA': { status: 'MAINTENANCE', msg: 'Manutenzione' },
+    'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
+    'BUDGET_ORG': { status: 'SOON', msg: 'A breve' },
+    'BUDGET_ASS': { status: 'SOON', msg: 'A breve' }
+  };
+
+  // --- UTILITY ---
+  function escapeHtml(text) {
+    if (text === null || text === undefined) return "";
+    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+
+  function toggleLoading(show) {
+    const el = document.getElementById('loading');
+    if(el) { if (show) el.classList.remove('hidden'); else el.classList.add('hidden'); }
+  }
+
+  function showToast(message, type = 'info') {
+    const toastEl = document.getElementById('liveToast');
+    const toastBody = document.getElementById('toast-message');
+    if(!toastEl) return alert(message);
+    
+    toastEl.classList.remove('bg-danger', 'bg-success', 'bg-primary', 'bg-warning', 'text-dark');
+    if (type === 'error') toastEl.classList.add('bg-danger');
+    else if (type === 'success') toastEl.classList.add('bg-success');
+    else if (type === 'warning') { toastEl.classList.add('bg-warning'); toastEl.classList.add('text-dark'); }
+    else { toastEl.classList.add('bg-primary'); }
+    
+    toastBody.innerText = message;
+    const toast = new bootstrap.Toast(toastEl);
+    toast.show();
+  }
+
+  function handleServerError(err) {
+      toggleLoading(false);
+      console.error(err);
+      showToast("Errore: " + err.message, 'error');
+  }
+
+  // --- NAVIGAZIONE ---
+  function showView(viewId) {
+    document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+    
+    const userArea = document.getElementById('user-area');
+    const subNav = document.getElementById('sub-nav-bar');
+    const isAuthView = (viewId === 'view-login' || viewId === 'view-register' || viewId === 'view-reset');
+
+    if (userArea) {
+        if (isAuthView) userArea.classList.add('hidden');
+        else userArea.classList.remove('hidden');
+    }
+
+    if (subNav) {
+        if (isAuthView || viewId === 'view-gateway') subNav.classList.add('hidden');
+        else subNav.classList.remove('hidden');
+    }
+
+    const target = document.getElementById(viewId);
+    if(target) target.classList.remove('hidden');
+    else console.error("Vista non trovata: " + viewId);
+    
+    if (viewId === 'view-register') loadInstitutions();
+  }
+
+  function goToRegister() { showView('view-register'); }
+  function goToReset() { showView('view-reset'); loadInstitutionsForReset(); }
+
+  // --- MODALE GENERICA (FIXED) ---
+  function openGenericModal(type) {
+      const modalEl = document.getElementById('genericModal');
+      const headerBg = document.getElementById('modal-header-bg');
+      const title = document.getElementById('modal-title');
+      const body = document.getElementById('modal-body-text');
+      const sub = document.getElementById('modal-sub-text');
+      const btn = document.getElementById('modal-confirm-btn');
+
+      // CONFIGURAZIONE BASE
+      const baseHeaderClass = "modal-header border-0 position-relative d-flex justify-content-center align-items-center";
+      btn.className = "btn rounded-pill px-5 fw-bold text-white";
+
+      // PULIZIA EVENTI: Usiamo .onclick = null per rimuovere tutto, poi riassegniamo.
+      btn.onclick = null; 
+
+      if (type === 'LOGOUT') {
+          headerBg.className = baseHeaderClass + " bg-danger";
+          title.innerHTML = '<i class="fas fa-sign-out-alt me-2"></i>Uscita';
+          body.innerText = "Vuoi davvero uscire dal portale?";
+          sub.innerText = "La sessione verrà terminata.";
+          btn.classList.add('bg-danger');
+          btn.innerText = "Esci";
+          btn.onclick = executeLogout;
+
+      } else if (type === 'SEND') {
+          if (cessazioniData.some(r => !r.azione)) { return showToast("Validare tutte le righe.", 'warning'); }
+          if (cessazioniData.some(r => r.azione === 'MODIFICA' && (!r.note || r.note.trim() === ''))) { return showToast("Nota obbligatoria per modifiche.", 'error'); }
+
+          headerBg.className = baseHeaderClass + " bg-primary";
+          title.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Conferma Invio';
+          body.innerText = "Confermi l'invio definitivo dei dati?";
+          sub.innerText = "Operazione irreversibile. Verrà generato il protocollo.";
+          btn.classList.add('bg-success');
+          btn.innerText = "Conferma";
+          btn.onclick = executeSend;
+      }
+      
+      genericModalInstance = new bootstrap.Modal(modalEl);
+      genericModalInstance.show();
+  }
+
+  function executeLogout() {
+      if(genericModalInstance) genericModalInstance.hide();
+      const token = currentUser.token;
+      currentUser = {}; 
+      const uName = document.getElementById('nav-user-name');
+      if(uName) uName.innerText = "Utente";
+      const frm = document.getElementById('login-form');
+      if(frm) frm.reset(); 
+      cessazioniData = []; 
+      
+      if(token) google.script.run.logoutUser(token);
+      showView('view-login');
+  }
+
+  function executeSend() {
+      if(genericModalInstance) genericModalInstance.hide();
+      const backdrop = document.querySelector('.modal-backdrop');
+      if (backdrop) backdrop.remove();
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      saveCessazioniAction('FINAL');
+  }
+
+  // --- LOGIN ---
+  const loginForm = document.getElementById('login-form');
+  if(loginForm) {
+      loginForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        toggleLoading(true);
+        google.script.run
+          .withSuccessHandler(res => {
+            toggleLoading(false);
+            if (res.success) {
+              currentUser = res;
+              document.getElementById('nav-user-name').innerText = escapeHtml(res.nome + " " + res.cognome);
+              showView('view-gateway');
+            } else { showToast(res.message, 'error'); }
+          })
+          .withFailureHandler(handleServerError).doLogin(this);
+      });
+  }
+
+  // --- REGISTRAZIONE & RESET ---
+  function loadInstitutions() {
+    if (allInstitutions.length > 0) return;
+    toggleLoading(true);
+    google.script.run.withSuccessHandler(list => { toggleLoading(false); allInstitutions = list; populateSelects(list); }).withFailureHandler(handleServerError).getInstitutionNames();
+  }
+  function loadInstitutionsForReset() {
+      if (allInstitutions.length > 0) { populateSelects(allInstitutions); return; }
+      toggleLoading(true);
+      google.script.run.withSuccessHandler(list => { toggleLoading(false); allInstitutions = list; populateSelects(list); }).withFailureHandler(handleServerError).getInstitutionNames();
+  }
+  function populateSelects(list) {
+      const sels = [document.getElementById('institution-select'), document.getElementById('reset-institution')];
+      sels.forEach(sel => {
+          if (!sel) return;
+          sel.innerHTML = '<option value="">Seleziona Istituzione...</option>';
+          list.forEach(i => { const opt = document.createElement('option'); opt.value = i; opt.innerText = i; sel.appendChild(opt); });
+      });
+  }
+  
+  function submitRegistration() {
+     const inst = document.getElementById('institution-select').value;
+     if (!inst) return showToast("Compilare i campi", 'error');
+     toggleLoading(true);
+     google.script.run.withSuccessHandler(res => { toggleLoading(false); if(res.success){ showToast("Ok", 'success'); showView('view-login'); } else showToast(res.message, 'error'); }).registerUser({ institutionName: inst, nome: document.getElementById('reg-name').value, cognome: document.getElementById('reg-surname').value, codiceFiscale: document.getElementById('reg-cf').value, email: document.getElementById('reg-email').value, pin: document.getElementById('reg-pin').value, password: document.getElementById('reg-pass').value });
+  }
+
+  function submitReset() {
+      const inst = document.getElementById('reset-institution').value;
+      if (!inst) return showToast("Compilare i campi", 'error');
+      toggleLoading(true);
+      google.script.run.withSuccessHandler(res => { toggleLoading(false); if(res.success){ showToast("Password Reset Ok", 'success'); showView('view-login'); } else showToast(res.message, 'error'); }).resetPasswordByData({ institutionName: inst, cf: document.getElementById('reset-cf').value, username: document.getElementById('reset-email').value, pin: document.getElementById('reset-pin').value, newPassword: document.getElementById('reset-new-pass').value });
+  }
+
+  function handleModuleAccess(key) {
+      const cfg = MODULES_CONFIG[key];
+      if(cfg.status === 'ACTIVE') cfg.action();
+      else showToast(cfg.msg, 'warning');
+  }
+
+  // --- CESSAZIONI ---
+  function openCessazioniModule() { 
+      // Non mostriamo subito la vista, aspettiamo il caricamento dati per decidere QUALE vista mostrare
+      loadCessazioniData(); 
+  }
+
+  function loadCessazioniData() {
+      toggleLoading(true);
+      
+      google.script.run.withSuccessHandler(res => {
+            toggleLoading(false);
+            if (!res.success) { showToast(res.message, 'error'); return; }
+            
+            // --- BIVIO ADMIN vs ISTITUZIONE ---
+            if (res.isAdmin) {
+                renderAdminDashboard(res.reportData);
+                return;
+            }
+            // ----------------------------------
+
+            // Logica Standard Istituzione
+            showView('view-module-cessazioni'); 
+            
+            cessazioniData = res.listaSoggetti;
+            const isFinal = (res.statoModulo === 'INVIATO');
+            cessazioniReadOnly = isFinal;
+            
+            document.getElementById('cess-denom-ist').innerText = res.denominazione;
+            document.getElementById('dynamic-aa').innerText = res.aa || "--";
+            
+            const badge = document.getElementById('cess-status-badge');
+            if (isFinal) {
+                badge.innerText = "INVIATO"; badge.className = "badge rounded-pill bg-success px-4 py-2 fs-6";
+            } else {
+                badge.innerText = "BOZZA"; badge.className = "badge rounded-pill bg-warning text-dark px-4 py-2 fs-6";
+            }
+
+            const chkInput = document.getElementById('chk-nuova-finestra');
+            const btnContainer = document.getElementById('btn-container');
+            
+            if(chkInput) chkInput.checked = res.richiestaNuovaFinestra === true;
+
+            if (isFinal) {
+                if(btnContainer) btnContainer.classList.add('hidden');
+                if(chkInput) chkInput.disabled = true;
+            } else {
+                if(btnContainer) btnContainer.classList.remove('hidden');
+                if(chkInput) chkInput.disabled = false;
+            }
+
+            renderTable();
+            
+        }).withFailureHandler(handleServerError).fetchCessazioniForUser(currentUser.token);
+  }
+
+  // --- NUOVA FUNZIONE RENDER ADMIN ---
+  function renderAdminDashboard(data) {
+      showView('view-module-cessazioni-admin');
+      const tbody = document.getElementById('tbody-admin-report');
+      tbody.innerHTML = '';
+
+      if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4">Nessun dato trovato.</td></tr>';
+          return;
+      }
+
+      data.forEach(row => {
+          // Badge Stato
+          let badgeClass = 'bg-secondary';
+          if (row.stato === 'INVIATO') badgeClass = 'bg-success';
+          else if (row.stato === 'BOZZA') badgeClass = 'bg-warning text-dark';
+          
+          // Icona Nuova Finestra
+          let winIcon = row.nuovaFinestra 
+              ? '<i class="fas fa-check-circle text-primary fs-5" title="Richiesta Attiva"></i>' 
+              : '<span class="text-muted text-opacity-25">-</span>';
+
+          tbody.innerHTML += `
+             <tr>
+                <td class="fw-bold text-primary">${escapeHtml(row.denominazione)}</td>
+                <td class="text-center"><span class="badge rounded-pill ${badgeClass}">${row.stato}</span></td>
+                <td class="text-center fw-bold">${row.totale}</td>
+                <td class="text-center text-success">${row.approvati > 0 ? row.approvati : '-'}</td>
+                <td class="text-center text-warning text-dark">${row.modificati > 0 ? row.modificati : '-'}</td>
+                <td class="text-center text-danger">${row.rifiutati > 0 ? row.rifiutati : '-'}</td>
+                <td class="text-center text-secondary small">${row.pendenti > 0 ? row.pendenti : '-'}</td>
+                <td class="text-center">${winIcon}</td>
+             </tr>
+          `;
+      });
+  }
+
+  function renderTable() {
+      const tbody = document.getElementById('tbody-cessazioni');
+      tbody.innerHTML = '';
+      let counts = { tot: 0, app: 0, rej: 0, mod: 0, pend: 0 };
+
+      if (!cessazioniData.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Nessun dato.</td></tr>'; updateStats(counts); return; }
+      
+      cessazioniData.forEach((row, idx) => {
+          counts.tot++;
+          if (row.azione === 'APPROVA') counts.app++;
+          else if (row.azione === 'MODIFICA') counts.mod++;
+          else if (row.azione === 'RIFIUTA') counts.rej++;
+          else counts.pend++;
+
+          const isAppr = row.azione === 'APPROVA';
+          const isMod = row.azione === 'MODIFICA';
+          const isRif = row.azione === 'RIFIUTA';
+          const noteDis = (!isMod || cessazioniReadOnly) ? 'disabled' : '';
+          const placeholder = isMod ? "Inserisci motivazione modifica..." : "Note opzionali";
+
+          let btns = `<div class="btn-group shadow-sm">
+             <button class="btn btn-sm ${isAppr?'btn-success':'btn-outline-success'}" onclick="act(${idx}, 'APPROVA')" ${cessazioniReadOnly?'disabled':''} title="Approva"><i class="fas fa-check"></i></button>
+             <button class="btn btn-sm ${isMod?'btn-warning':'btn-outline-warning'}" onclick="act(${idx}, 'MODIFICA')" ${cessazioniReadOnly?'disabled':''} title="Modifica"><i class="fas fa-edit"></i></button>
+             <button class="btn btn-sm ${isRif?'btn-danger':'btn-outline-danger'}" onclick="act(${idx}, 'RIFIUTA')" ${cessazioniReadOnly?'disabled':''} title="Rifiuta"><i class="fas fa-times"></i></button>
+          </div>`;
+          
+          tbody.innerHTML += `<tr class="${!row.azione?'table-warning':''}">
+              <td class="fw-bold text-nowrap">${escapeHtml(row.cognome)} ${escapeHtml(row.nome)}</td>
+              <td>${escapeHtml(row.cf)}</td>
+              <td>${escapeHtml(row.dataNascita)}</td>
+              <td>${escapeHtml(row.eta)}</td>
+              <td class="text-center">${btns}</td>
+              <td>
+                <textarea id="note-txt-${idx}" 
+                          class="form-control form-control-sm note-textarea" 
+                          rows="1" 
+                          placeholder="${placeholder}"
+                          oninput="updNote(${idx}, this.value)" 
+                          ${noteDis}>${escapeHtml(row.note)}</textarea>
+              </td>
+          </tr>`;
+      });
+      updateStats(counts);
+  }
+
+  function updateStats(c) {
+      document.getElementById('stat-total').innerText = c.tot;
+      document.getElementById('stat-approved').innerText = c.app;
+      document.getElementById('stat-rejected').innerText = c.rej;
+      document.getElementById('stat-modified').innerText = c.mod;
+      document.getElementById('stat-pending').innerText = c.pend;
+  }
+
+  function act(idx, act) { 
+      if(cessazioniReadOnly) return; 
+      cessazioniData[idx].azione = act; 
+      renderTable();
+      if(act === 'MODIFICA') setTimeout(() => { const el=document.getElementById('note-txt-'+idx); if(el) el.focus(); }, 50);
+  }
+  function updNote(idx, val) { cessazioniData[idx].note = val; }
+  
+// --- SALVATAGGIO OTTIMISTICO (NO ATTESA SERVER) ---
+  function saveCessazioniAction(mode) {
+      
+      // 1. VALIDAZIONE RIGIDA
+      if (mode === 'FINAL') {
+          if (cessazioniData.some(r => !r.azione)) { 
+              return showToast("Attenzione: Devi validare tutte le righe prima di inviare.", 'warning'); 
+          }
+          if (cessazioniData.some(r => r.azione === 'MODIFICA' && (!r.note || r.note.trim() === ''))) { 
+              return showToast("Attenzione: La nota è obbligatoria per le modifiche.", 'error'); 
+          }
+      }
+
+      // Preparazione Payload
+      const chkEl = document.getElementById('chk-nuova-finestra');
+      const reqNew = chkEl ? chkEl.checked : false;
+      const payload = { mode: mode, rows: cessazioniData, richiestaNuovaFinestra: reqNew };
+
+      if (mode === 'FINAL') {
+          // *** CASO CONFERMA E INVIA (OTTIMISTICO) ***
+          showToast("Dati inseriti correttamente.", 'success');
+          showView('view-gateway');
+          cessazioniReadOnly = true; 
+          cessazioniData = []; 
+          document.getElementById('tbody-cessazioni').innerHTML = ''; 
+
+          google.script.run
+            .withFailureHandler(err => {
+                console.error("Errore salvataggio background: ", err);
+                showToast("ATTENZIONE: Errore nel salvataggio dei dati. Contattare assistenza.", 'error');
+            })
+            .saveCessazioni(currentUser.token, payload);
+
+      } else {
+          // *** CASO BOZZA (TRADIZIONALE) ***
+          toggleLoading(true);
+          google.script.run
+            .withSuccessHandler(res => {
+                toggleLoading(false);
+                if(res.success) showToast(res.message, 'success');
+                else showToast(res.message, 'error');
+            })
+            .withFailureHandler(err => {
+                toggleLoading(false);
+                showToast("Errore salvataggio bozza: " + err.message, 'error');
+            })
+            .saveCessazioni(currentUser.token, payload);
+      }
+  }
+</script>
