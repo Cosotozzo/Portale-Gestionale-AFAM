@@ -1,23 +1,97 @@
 <script>
   /**
    * PORTALE GESTIONALE AFAM
-   * Versione: 15.5 (Final: Admin Dashboard Integrated)
+   * Versione: 16.0 (Session Persistence + Inactivity Timeout)
    */
 
+  // --- VARIABILI GLOBALI ---
   let currentUser = {};
   let allInstitutions = [];
   let cessazioniData = [];
   let cessazioniReadOnly = false;
   let genericModalInstance = null;
 
-// FILE: JavaScript.html
-const MODULES_CONFIG = {
-  'RCA': { status: 'SOON', msg: 'Servizio in attivazione.' },
-  'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
-  'BUDGET_ORG': { status: 'SOON', msg: 'Servizio in attivazione.' },
-  'BUDGET_ASS': { status: 'SOON', msg: 'Servizio in attivazione.' },
-  'UTENZE': { status: 'ACTIVE', action: openUsersModule } 
-};
+  // --- CONFIGURAZIONE TIMEOUT INATTIVITÀ ---
+  const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 Minuti
+  let inactivityTimer;
+
+  const MODULES_CONFIG = {
+    'RCA': { status: 'SOON', msg: 'Servizio in attivazione.' },
+    'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
+    'BUDGET_ORG': { status: 'SOON', msg: 'Servizio in attivazione.' },
+    'BUDGET_ASS': { status: 'SOON', msg: 'Servizio in attivazione.' },
+    'UTENZE': { status: 'ACTIVE', action: openUsersModule } 
+  };
+
+  // --- INIZIALIZZAZIONE (Gestione F5 e Refresh) ---
+  document.addEventListener('DOMContentLoaded', function() {
+      checkStoredSession();
+  });
+
+  function checkStoredSession() {
+      const storedToken = sessionStorage.getItem('AFAM_SESSION_TOKEN');
+      
+      // Se non c'è token, l'utente deve fare login manualmente
+      if (!storedToken) return;
+
+      toggleLoading(true);
+      
+      // Tentativo di ripristino sessione lato server
+      google.script.run
+        .withSuccessHandler(res => {
+            toggleLoading(false);
+            if (res.success) {
+                // Sessione valida: Ripristina utente e vista
+                currentUser = res;
+                updateUserInterface(res);
+                showView('view-gateway');
+                showToast("Bentornato, " + res.nome, 'success');
+                
+                // AVVIO MONITORAGGIO INATTIVITÀ
+                startInactivityMonitor();
+            } else {
+                // Token scaduto o invalido lato server
+                console.warn("Sessione non valida");
+                executeLogout(); 
+            }
+        })
+        .withFailureHandler(err => {
+            toggleLoading(false);
+            console.error("Errore ripristino sessione", err);
+            executeLogout(); 
+        })
+        .restoreSession(storedToken);
+  }
+
+  // --- GESTIONE INATTIVITÀ ---
+  function startInactivityMonitor() {
+      const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+      events.forEach(evt => {
+          document.addEventListener(evt, resetInactivityTimer, true);
+      });
+      resetInactivityTimer(); // Avvio iniziale
+  }
+
+  function stopInactivityMonitor() {
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+      events.forEach(evt => {
+          document.removeEventListener(evt, resetInactivityTimer, true);
+      });
+  }
+
+  function resetInactivityTimer() {
+      // Esegui solo se l'utente è loggato
+      if (!currentUser || !currentUser.token) return;
+
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+
+      inactivityTimer = setTimeout(() => {
+          console.warn("Sessione scaduta per inattività.");
+          showToast("Sessione scaduta per inattività (15 min).", "warning");
+          executeLogout(); 
+      }, INACTIVITY_TIMEOUT_MS);
+  }
 
   // --- UTILITY ---
   function escapeHtml(text) {
@@ -52,6 +126,22 @@ const MODULES_CONFIG = {
       showToast("Errore: " + err.message, 'error');
   }
 
+  function updateUserInterface(user) {
+      // Aggiorna Nome Utente nella Navbar
+      const elName = document.getElementById('nav-user-name');
+      if(elName) elName.innerText = escapeHtml(user.nome + " " + user.cognome);
+      
+      // Gestione visibilità card Admin
+      const adminCard = document.getElementById('module-card-users');
+      if(adminCard) {
+          if (user.role && String(user.role).toUpperCase() === 'ADMIN') {
+              adminCard.classList.remove('hidden');
+          } else {
+              adminCard.classList.add('hidden');
+          }
+      }
+  }
+
   // --- NAVIGAZIONE ---
   function showView(viewId) {
     document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
@@ -75,23 +165,17 @@ const MODULES_CONFIG = {
     else console.error("Vista non trovata: " + viewId);
     
     if (viewId === 'view-register') loadInstitutions();
-    if (viewId === 'view-gateway') {
-    const adminCard = document.getElementById('module-card-users');
-    if(adminCard) {
-        // Se il ruolo è ADMIN, mostra la card, altrimenti nascondila
-        if (currentUser.role && String(currentUser.role).toUpperCase() === 'ADMIN') {
-            adminCard.classList.remove('hidden');
-        } else {
-            adminCard.classList.add('hidden');
-        }
+    
+    // Riapplica logica Admin se torniamo al gateway
+    if (viewId === 'view-gateway' && currentUser.role) {
+        updateUserInterface(currentUser);
     }
-}
   }
 
   function goToRegister() { showView('view-register'); }
   function goToReset() { showView('view-reset'); loadInstitutionsForReset(); }
 
-  // --- MODALE GENERICA (FIXED) ---
+  // --- MODALE GENERICA ---
   function openGenericModal(type) {
       const modalEl = document.getElementById('genericModal');
       const headerBg = document.getElementById('modal-header-bg');
@@ -100,11 +184,8 @@ const MODULES_CONFIG = {
       const sub = document.getElementById('modal-sub-text');
       const btn = document.getElementById('modal-confirm-btn');
 
-      // CONFIGURAZIONE BASE
       const baseHeaderClass = "modal-header border-0 position-relative d-flex justify-content-center align-items-center";
       btn.className = "btn rounded-pill px-5 fw-bold text-white";
-
-      // PULIZIA EVENTI: Usiamo .onclick = null per rimuovere tutto, poi riassegniamo.
       btn.onclick = null; 
 
       if (type === 'LOGOUT') {
@@ -134,16 +215,28 @@ const MODULES_CONFIG = {
   }
 
   function executeLogout() {
+      // 1. FERMA MONITORAGGIO
+      stopInactivityMonitor();
+
+      // 2. PULIZIA STORAGE
+      sessionStorage.removeItem('AFAM_SESSION_TOKEN');
+
       if(genericModalInstance) genericModalInstance.hide();
+      
       const token = currentUser.token;
       currentUser = {}; 
+      
       const uName = document.getElementById('nav-user-name');
       if(uName) uName.innerText = "Utente";
+      
       const frm = document.getElementById('login-form');
       if(frm) frm.reset(); 
+      
       cessazioniData = []; 
       
-      if(token) google.script.run.logoutUser(token);
+      // Chiamata server per invalidare token (opzionale ma consigliata)
+      if(token) google.script.run.withFailureHandler(console.error).logoutUser(token);
+      
       showView('view-login');
   }
 
@@ -167,7 +260,16 @@ const MODULES_CONFIG = {
             toggleLoading(false);
             if (res.success) {
               currentUser = res;
-              document.getElementById('nav-user-name').innerText = escapeHtml(res.nome + " " + res.cognome);
+              
+              // 1. SALVA TOKEN PER F5
+              sessionStorage.setItem('AFAM_SESSION_TOKEN', res.token);
+              
+              // 2. AGGIORNA INTERFACCIA
+              updateUserInterface(res);
+              
+              // 3. AVVIA TIMER INATTIVITÀ
+              startInactivityMonitor();
+
               showView('view-gateway');
             } else { showToast(res.message, 'error'); }
           })
@@ -217,7 +319,6 @@ const MODULES_CONFIG = {
 
   // --- CESSAZIONI ---
   function openCessazioniModule() { 
-      // Non mostriamo subito la vista, aspettiamo il caricamento dati per decidere QUALE vista mostrare
       loadCessazioniData(); 
   }
 
@@ -228,12 +329,11 @@ const MODULES_CONFIG = {
             toggleLoading(false);
             if (!res.success) { showToast(res.message, 'error'); return; }
             
-            // --- BIVIO ADMIN vs ISTITUZIONE ---
+            // BIVIO ADMIN vs ISTITUZIONE
             if (res.isAdmin) {
                 renderAdminDashboard(res.reportData);
                 return;
             }
-            // ----------------------------------
 
             // Logica Standard Istituzione
             showView('view-module-cessazioni'); 
@@ -270,7 +370,6 @@ const MODULES_CONFIG = {
         }).withFailureHandler(handleServerError).fetchCessazioniForUser(currentUser.token);
   }
 
-  // --- NUOVA FUNZIONE RENDER ADMIN ---
   function renderAdminDashboard(data) {
       showView('view-module-cessazioni-admin');
       const tbody = document.getElementById('tbody-admin-report');
@@ -282,12 +381,10 @@ const MODULES_CONFIG = {
       }
 
       data.forEach(row => {
-          // Badge Stato
           let badgeClass = 'bg-secondary';
           if (row.stato === 'INVIATO') badgeClass = 'bg-success';
           else if (row.stato === 'BOZZA') badgeClass = 'bg-warning text-dark';
           
-          // Icona Nuova Finestra
           let winIcon = row.nuovaFinestra 
               ? '<i class="fas fa-check-circle text-primary fs-5" title="Richiesta Attiva"></i>' 
               : '<span class="text-muted text-opacity-25">-</span>';
@@ -328,9 +425,9 @@ const MODULES_CONFIG = {
           const placeholder = isMod ? "Inserisci motivazione modifica..." : "...";
 
           let btns = `<div class="btn-group shadow-sm">
-             <button class="btn btn-sm ${isAppr?'btn-success':'btn-outline-success'}" onclick="act(${idx}, 'APPROVA')" ${cessazioniReadOnly?'disabled':''} title="Approva"><i class="fas fa-check"></i></button>
-             <button class="btn btn-sm ${isMod?'btn-warning':'btn-outline-warning'}" onclick="act(${idx}, 'MODIFICA')" ${cessazioniReadOnly?'disabled':''} title="Modifica"><i class="fas fa-edit"></i></button>
-             <button class="btn btn-sm ${isRif?'btn-danger':'btn-outline-danger'}" onclick="act(${idx}, 'RIFIUTA')" ${cessazioniReadOnly?'disabled':''} title="Rifiuta"><i class="fas fa-times"></i></button>
+              <button class="btn btn-sm ${isAppr?'btn-success':'btn-outline-success'}" onclick="act(${idx}, 'APPROVA')" ${cessazioniReadOnly?'disabled':''} title="Approva"><i class="fas fa-check"></i></button>
+              <button class="btn btn-sm ${isMod?'btn-warning':'btn-outline-warning'}" onclick="act(${idx}, 'MODIFICA')" ${cessazioniReadOnly?'disabled':''} title="Modifica"><i class="fas fa-edit"></i></button>
+              <button class="btn btn-sm ${isRif?'btn-danger':'btn-outline-danger'}" onclick="act(${idx}, 'RIFIUTA')" ${cessazioniReadOnly?'disabled':''} title="Rifiuta"><i class="fas fa-times"></i></button>
           </div>`;
           
           tbody.innerHTML += `<tr class="${!row.azione?'table-warning':''}">
@@ -368,10 +465,7 @@ const MODULES_CONFIG = {
   }
   function updNote(idx, val) { cessazioniData[idx].note = val; }
   
-// --- SALVATAGGIO OTTIMISTICO (NO ATTESA SERVER) ---
   function saveCessazioniAction(mode) {
-      
-      // 1. VALIDAZIONE RIGIDA
       if (mode === 'FINAL') {
           if (cessazioniData.some(r => !r.azione)) { 
               return showToast("Attenzione: Devi validare tutte le righe prima di inviare.", 'warning'); 
@@ -381,13 +475,11 @@ const MODULES_CONFIG = {
           }
       }
 
-      // Preparazione Payload
       const chkEl = document.getElementById('chk-nuova-finestra');
       const reqNew = chkEl ? chkEl.checked : false;
       const payload = { mode: mode, rows: cessazioniData, richiestaNuovaFinestra: reqNew };
 
       if (mode === 'FINAL') {
-          // *** CASO CONFERMA E INVIA (OTTIMISTICO) ***
           showToast("Dati inseriti correttamente.", 'success');
           showView('view-gateway');
           cessazioniReadOnly = true; 
@@ -397,12 +489,11 @@ const MODULES_CONFIG = {
           google.script.run
             .withFailureHandler(err => {
                 console.error("Errore salvataggio background: ", err);
-                showToast("ATTENZIONE: Errore nel salvataggio dei dati. Contattare assistenza.", 'error');
+                showToast("ATTENZIONE: Errore nel salvataggio dei dati.", 'error');
             })
             .saveCessazioni(currentUser.token, payload);
 
       } else {
-          // *** CASO BOZZA (TRADIZIONALE) ***
           toggleLoading(true);
           google.script.run
             .withSuccessHandler(res => {
@@ -418,66 +509,66 @@ const MODULES_CONFIG = {
       }
   }
 
-// --- GESTIONE UTENZE (ADMIN) ---
-function openUsersModule() {
-    showView('view-module-users');
-    loadPendingUsers();
-}
+  // --- GESTIONE UTENZE (ADMIN) ---
+  function openUsersModule() {
+      showView('view-module-users');
+      loadPendingUsers();
+  }
 
-function loadPendingUsers() {
-    toggleLoading(true);
-    google.script.run
-      .withSuccessHandler(res => {
-          toggleLoading(false);
-          if(res.success) renderUsersTable(res.users);
-          else showToast(res.message, 'error');
-      })
-      .withFailureHandler(handleServerError)
-      .fetchPendingUsers(currentUser.token);
-}
+  function loadPendingUsers() {
+      toggleLoading(true);
+      google.script.run
+        .withSuccessHandler(res => {
+            toggleLoading(false);
+            if(res.success) renderUsersTable(res.users);
+            else showToast(res.message, 'error');
+        })
+        .withFailureHandler(handleServerError)
+        .fetchPendingUsers(currentUser.token);
+  }
 
-function renderUsersTable(users) {
-    const tbody = document.getElementById('tbody-users');
-    tbody.innerHTML = '';
-    
-    if(!users || users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Nessuna richiesta in attesa.</td></tr>';
-        return;
-    }
+  function renderUsersTable(users) {
+      const tbody = document.getElementById('tbody-users');
+      tbody.innerHTML = '';
+      
+      if(!users || users.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Nessuna richiesta in attesa.</td></tr>';
+          return;
+      }
 
-    users.forEach(u => {
-        tbody.innerHTML += `
-          <tr>
-              <td class="small text-muted">${escapeHtml(u.dataRichiesta)}</td>
-              <td class="fw-bold text-primary">${escapeHtml(u.cognome)} ${escapeHtml(u.nome)}</td>
-              <td><span class="badge bg-light text-dark border">${escapeHtml(u.cf)}</span></td>
-              <td class="small">${escapeHtml(u.istituzione)}</td>
-              <td class="small">${escapeHtml(u.email)}</td>
-              <td class="text-center">
-                  <button class="btn btn-sm btn-success me-1" onclick="approveUser('${u.id}', 'APPROVE')" title="Approva"><i class="fas fa-check"></i></button>
-                  <button class="btn btn-sm btn-danger" onclick="approveUser('${u.id}', 'REJECT')" title="Rifiuta"><i class="fas fa-times"></i></button>
-              </td>
-          </tr>
-        `;
-    });
-}
+      users.forEach(u => {
+          tbody.innerHTML += `
+            <tr>
+                <td class="small text-muted">${escapeHtml(u.dataRichiesta)}</td>
+                <td class="fw-bold text-primary">${escapeHtml(u.cognome)} ${escapeHtml(u.nome)}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(u.cf)}</span></td>
+                <td class="small">${escapeHtml(u.istituzione)}</td>
+                <td class="small">${escapeHtml(u.email)}</td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-success me-1" onclick="approveUser('${u.id}', 'APPROVE')" title="Approva"><i class="fas fa-check"></i></button>
+                    <button class="btn btn-sm btn-danger" onclick="approveUser('${u.id}', 'REJECT')" title="Rifiuta"><i class="fas fa-times"></i></button>
+                </td>
+            </tr>
+          `;
+      });
+  }
 
-function approveUser(id, action) {
-    if(!confirm(action === 'APPROVE' ? "Confermi l'attivazione dell'utente?" : "Vuoi davvero rifiutare la richiesta?")) return;
-    
-    toggleLoading(true);
-    google.script.run
-      .withSuccessHandler(res => {
-          toggleLoading(false);
-          if(res.success) {
-              showToast(res.message, 'success');
-              loadPendingUsers(); // Ricarica la lista
-          } else {
-              showToast(res.message, 'error');
-          }
-      })
-      .withFailureHandler(handleServerError)
-      .updateUserStatus(currentUser.token, id, action);
-}
+  function approveUser(id, action) {
+      if(!confirm(action === 'APPROVE' ? "Confermi l'attivazione dell'utente?" : "Vuoi davvero rifiutare la richiesta?")) return;
+      
+      toggleLoading(true);
+      google.script.run
+        .withSuccessHandler(res => {
+            toggleLoading(false);
+            if(res.success) {
+                showToast(res.message, 'success');
+                loadPendingUsers(); 
+            } else {
+                showToast(res.message, 'error');
+            }
+        })
+        .withFailureHandler(handleServerError)
+        .updateUserStatus(currentUser.token, id, action);
+  }
 
 </script>
