@@ -12,11 +12,11 @@
 
 // FILE: JavaScript.html
 const MODULES_CONFIG = {
-  'RCA': { status: 'MAINTENANCE', msg: 'Manutenzione' },
+  'RCA': { status: 'SOON', msg: 'Servizio in attivazione.' },
   'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
-  'BUDGET_ORG': { status: 'SOON', msg: 'A breve' },
-  'BUDGET_ASS': { status: 'SOON', msg: 'A breve' },
-  'UTENZE': { status: 'ACTIVE', action: openUsersModule } // <--- AGGIUNGI QUESTA RIGA
+  'BUDGET_ORG': { status: 'SOON', msg: 'Servizio in attivazione.' },
+  'BUDGET_ASS': { status: 'SOON', msg: 'Servizio in attivazione.' },
+  'UTENZE': { status: 'ACTIVE', action: openUsersModule } 
 };
 
   // --- UTILITY ---
@@ -325,7 +325,7 @@ const MODULES_CONFIG = {
           const isMod = row.azione === 'MODIFICA';
           const isRif = row.azione === 'RIFIUTA';
           const noteDis = (!isMod || cessazioniReadOnly) ? 'disabled' : '';
-          const placeholder = isMod ? "Inserisci motivazione modifica..." : "Note opzionali";
+          const placeholder = isMod ? "Inserisci motivazione modifica..." : "...";
 
           let btns = `<div class="btn-group shadow-sm">
              <button class="btn btn-sm ${isAppr?'btn-success':'btn-outline-success'}" onclick="act(${idx}, 'APPROVA')" ${cessazioniReadOnly?'disabled':''} title="Approva"><i class="fas fa-check"></i></button>
