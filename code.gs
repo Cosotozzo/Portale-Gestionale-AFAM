@@ -514,6 +514,75 @@ function getInstitutionNames() {
   return cleanList;
 }
 
+// INIZIO MODIFICA - FUNZIONI ADMIN UTENZE
+function fetchPendingUsers(token) {
+  try {
+    var userCtx = verifySessionAndGetUser(token);
+    if (String(userCtx.ruolo).toUpperCase() !== 'ADMIN') throw new Error("Accesso negato: Funzione riservata agli amministratori.");
+
+    var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+    
+    // Mappa Istituzioni per display amichevole
+    var sheetIst = ss.getSheetByName(DB_CONFIG.SHEET_ISTITUZIONI);
+    var dataIst = sheetIst.getDataRange().getValues();
+    var mapIst = {};
+    for(var k=1; k<dataIst.length; k++) mapIst[dataIst[k][0]] = dataIst[k][1];
+
+    var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
+    var data = sheetCred.getDataRange().getValues();
+    var pending = [];
+
+    for (var i = 1; i < data.length; i++) {
+       // Check Stato (Colonna 11 da COL_MAP)
+       if (data[i][COL_MAP.CRED.STATO] === 'IN_ATTESA_DI_APPROVAZIONE') {
+           var iId = data[i][COL_MAP.CRED.ISTITUZIONE_ID];
+           pending.push({
+               id: data[i][COL_MAP.CRED.ID],
+               nome: data[i][COL_MAP.CRED.NOME],
+               cognome: data[i][COL_MAP.CRED.COGNOME],
+               cf: data[i][COL_MAP.CRED.CF],
+               email: data[i][COL_MAP.CRED.USERNAME],
+               istituzione: mapIst[iId] || iId,
+               dataRichiesta: formatDateSafe(data[i][12]) // Timestamp creazione (Col 12)
+           });
+       }
+    }
+    return { success: true, users: pending };
+  } catch(e) { return { success: false, message: e.message }; }
+}
+
+function updateUserStatus(token, userId, action) {
+  var lock = LockService.getScriptLock();
+  try {
+      lock.waitLock(10000);
+      var userCtx = verifySessionAndGetUser(token);
+      if (String(userCtx.ruolo).toUpperCase() !== 'ADMIN') throw new Error("Non autorizzato.");
+      
+      var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+      var sheet = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
+      var data = sheet.getDataRange().getValues();
+      
+      var found = false;
+      for (var i = 1; i < data.length; i++) {
+          if (String(data[i][COL_MAP.CRED.ID]) === String(userId)) {
+              var newState = (action === 'APPROVE') ? 'ATTIVO' : 'RIFIUTATO';
+              sheet.getRange(i + 1, COL_MAP.CRED.STATO + 1).setValue(newState);
+              found = true;
+              break;
+          }
+      }
+      if(!found) throw new Error("Utente non trovato.");
+      
+      SpreadsheetApp.flush();
+      return { success: true, message: "Stato utente aggiornato a: " + (action === 'APPROVE' ? 'ATTIVO' : 'RIFIUTATO') };
+  } catch(e) {
+      return { success: false, message: "Errore: " + e.message };
+  } finally {
+      lock.releaseLock();
+  }
+}
+// FINE MODIFICA
+
 function registerUser(formObject) {
   try {
     var pin = String(formObject.pin).trim().toUpperCase();

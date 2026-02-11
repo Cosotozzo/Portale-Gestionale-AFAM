@@ -10,12 +10,14 @@
   let cessazioniReadOnly = false;
   let genericModalInstance = null;
 
-  const MODULES_CONFIG = {
-    'RCA': { status: 'MAINTENANCE', msg: 'Manutenzione' },
-    'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
-    'BUDGET_ORG': { status: 'SOON', msg: 'A breve' },
-    'BUDGET_ASS': { status: 'SOON', msg: 'A breve' }
-  };
+// FILE: JavaScript.html
+const MODULES_CONFIG = {
+  'RCA': { status: 'MAINTENANCE', msg: 'Manutenzione' },
+  'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
+  'BUDGET_ORG': { status: 'SOON', msg: 'A breve' },
+  'BUDGET_ASS': { status: 'SOON', msg: 'A breve' },
+  'UTENZE': { status: 'ACTIVE', action: openUsersModule } // <--- AGGIUNGI QUESTA RIGA
+};
 
   // --- UTILITY ---
   function escapeHtml(text) {
@@ -73,6 +75,17 @@
     else console.error("Vista non trovata: " + viewId);
     
     if (viewId === 'view-register') loadInstitutions();
+    if (viewId === 'view-gateway') {
+    const adminCard = document.getElementById('module-card-users');
+    if(adminCard) {
+        // Se il ruolo è ADMIN, mostra la card, altrimenti nascondila
+        if (currentUser.role && String(currentUser.role).toUpperCase() === 'ADMIN') {
+            adminCard.classList.remove('hidden');
+        } else {
+            adminCard.classList.add('hidden');
+        }
+    }
+}
   }
 
   function goToRegister() { showView('view-register'); }
@@ -404,4 +417,67 @@
             .saveCessazioni(currentUser.token, payload);
       }
   }
+
+// --- GESTIONE UTENZE (ADMIN) ---
+function openUsersModule() {
+    showView('view-module-users');
+    loadPendingUsers();
+}
+
+function loadPendingUsers() {
+    toggleLoading(true);
+    google.script.run
+      .withSuccessHandler(res => {
+          toggleLoading(false);
+          if(res.success) renderUsersTable(res.users);
+          else showToast(res.message, 'error');
+      })
+      .withFailureHandler(handleServerError)
+      .fetchPendingUsers(currentUser.token);
+}
+
+function renderUsersTable(users) {
+    const tbody = document.getElementById('tbody-users');
+    tbody.innerHTML = '';
+    
+    if(!users || users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Nessuna richiesta in attesa.</td></tr>';
+        return;
+    }
+
+    users.forEach(u => {
+        tbody.innerHTML += `
+          <tr>
+              <td class="small text-muted">${escapeHtml(u.dataRichiesta)}</td>
+              <td class="fw-bold text-primary">${escapeHtml(u.cognome)} ${escapeHtml(u.nome)}</td>
+              <td><span class="badge bg-light text-dark border">${escapeHtml(u.cf)}</span></td>
+              <td class="small">${escapeHtml(u.istituzione)}</td>
+              <td class="small">${escapeHtml(u.email)}</td>
+              <td class="text-center">
+                  <button class="btn btn-sm btn-success me-1" onclick="approveUser('${u.id}', 'APPROVE')" title="Approva"><i class="fas fa-check"></i></button>
+                  <button class="btn btn-sm btn-danger" onclick="approveUser('${u.id}', 'REJECT')" title="Rifiuta"><i class="fas fa-times"></i></button>
+              </td>
+          </tr>
+        `;
+    });
+}
+
+function approveUser(id, action) {
+    if(!confirm(action === 'APPROVE' ? "Confermi l'attivazione dell'utente?" : "Vuoi davvero rifiutare la richiesta?")) return;
+    
+    toggleLoading(true);
+    google.script.run
+      .withSuccessHandler(res => {
+          toggleLoading(false);
+          if(res.success) {
+              showToast(res.message, 'success');
+              loadPendingUsers(); // Ricarica la lista
+          } else {
+              showToast(res.message, 'error');
+          }
+      })
+      .withFailureHandler(handleServerError)
+      .updateUserStatus(currentUser.token, id, action);
+}
+
 </script>

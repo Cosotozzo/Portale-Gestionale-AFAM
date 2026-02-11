@@ -301,6 +301,7 @@
                  </div>
                </div>
             </div>
+
             <div class="col-md-6 col-lg-3">
                 <div class="module-card" onclick="handleModuleAccess('RCA')">
                     <div class="card-body">
@@ -310,6 +311,7 @@
                     </div>
                 </div>
             </div>
+
             <div class="col-md-6 col-lg-3">
                 <div class="module-card" onclick="handleModuleAccess('BUDGET_ORG')">
                     <div class="card-body">
@@ -319,6 +321,7 @@
                     </div>
                 </div>
             </div>
+
             <div class="col-md-6 col-lg-3">
                 <div class="module-card" onclick="handleModuleAccess('BUDGET_ASS')">
                     <div class="card-body">
@@ -328,7 +331,26 @@
                     </div>
                 </div>
             </div>
+
+            <div class="col-md-6 col-lg-3 hidden" id="module-card-users">
+                <div class="module-card" style="border-bottom-color: var(--mur-pink);" onclick="handleModuleAccess('UTENZE')">
+                    <div class="card-body">
+                        <i class="fas fa-user-shield card-icon" style="color: var(--mur-pink);"></i>
+                        <h5 class="card-title">Gestione Utenze</h5>
+                        <p class="card-text">Approvazione Richieste</p>
+                    </div>
+                </div>
+            </div>
          </div>
+         <div class="col-md-6 col-lg-3 hidden" id="module-card-users">
+            <div class="module-card" style="border-bottom-color: var(--mur-pink);" onclick="handleModuleAccess('UTENZE')">
+            <div class="card-body">
+            <i class="fas fa-user-shield card-icon" style="color: var(--mur-pink);"></i>
+            <h5 class="card-title">Gestione Utenze</h5>
+            <p class="card-text">Approvazione Richieste</p>
+        </div>
+    </div>
+</div>
       </div>
 
       <div id="view-module-cessazioni" class="view-section hidden">
@@ -453,7 +475,35 @@
             </div>
          </div>
       </div>
-      
+      <div id="view-module-users" class="view-section hidden">
+          <div class="d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <h3 class="fw-bold" style="color: var(--header-main-bg);">Gestione Richieste Accesso</h3>
+                <p class="text-muted">Approva o rifiuta le nuove registrazioni al portale.</p>
+              </div>
+              <button class="btn btn-primary btn-sm rounded-pill" onclick="loadPendingUsers()">
+                <i class="fas fa-sync-alt me-2"></i>Aggiorna Lista
+              </button>
+          </div>
+
+          <div class="card border-0 shadow-sm rounded-custom">
+            <div class="table-responsive" style="max-height: 65vh; overflow-y: auto;">
+                <table class="table table-hover align-middle mb-0 table-rounded">
+                  <thead class="table-light text-uppercase small text-muted" style="position: sticky; top: 0; z-index: 10;">
+                      <tr>
+                        <th>Data</th>
+                        <th>Nominativo</th>
+                        <th>CF</th>
+                        <th>Istituzione</th>
+                        <th>Email</th>
+                        <th class="text-center">Azioni</th>
+                      </tr>
+                  </thead>
+                  <tbody id="tbody-users"></tbody>
+                </table>
+            </div>
+          </div>
+      </div>
     </main>
 
     <footer class="footer-mur"><div class="container"><div class="text-center text-white small">Ministero dell'Università e della Ricerca - © 2026</div></div></footer>
