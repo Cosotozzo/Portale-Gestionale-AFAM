@@ -711,32 +711,6 @@ function submitRegistration() {
   }
 
 // --- FILTRO RICERCA MONITORAGGIO CESSAZIONI ---
-document.addEventListener('DOMContentLoaded', function() {
-    const filterInput = document.getElementById('filter-admin-cessazioni');
-    
-    if (filterInput) {
-        filterInput.addEventListener('keyup', function() {
-            const filterValue = this.value.toLowerCase();
-            const tableBody = document.getElementById('tbody-admin-report');
-            const rows = tableBody.getElementsByTagName('tr');
-
-            for (let i = 0; i < rows.length; i++) {
-                // La colonna "Istituzione" è la prima (indice 0)
-                const institutionCell = rows[i].getElementsByTagName('td')[0]; 
-                
-                if (institutionCell) {
-                    const txtValue = institutionCell.textContent || institutionCell.innerText;
-                    if (txtValue.toLowerCase().indexOf(filterValue) > -1) {
-                        rows[i].style.display = "";
-                    } else {
-                        rows[i].style.display = "none";
-                    }
-                }
-            }
-        });
-    }
-});
-
 function filterUsersTable() {
       const val = document.getElementById('filter-users-list').value.toLowerCase();
       const rows = document.querySelectorAll('#tbody-users tr');
@@ -747,7 +721,10 @@ function filterUsersTable() {
   }
 
 function filterAdminTable() {
-  const input = document.getElementById("filter-admin-cessazioni");
+  // Targettiamo il NUOVO ID specifico per l'admin (corrispondente alla modifica HTML)
+  const input = document.getElementById("filter-monitoraggio"); 
+  if (!input) return;
+
   const filter = input.value.toLowerCase();
   const tableBody = document.getElementById("tbody-admin-report");
   const rows = tableBody.getElementsByTagName("tr");
