@@ -258,12 +258,15 @@
 <div class="card login-card bg-white p-5">
     <h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Richiesta Nuova Utenza</h4>
     <form id="register-form">
-        <div class="mb-3">
+<h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Richiesta Nuova Utenza</h4>
+    <form id="register-form">
+        <div class="mb-3 position-relative">
             <label class="form-label small fw-bold text-muted">ISTITUZIONE</label>
-            <select id="institution-select" class="form-select" required>
-                <option value="">Seleziona...</option>
-            </select>
+            <input type="text" class="form-control" id="institution-select" placeholder="Cerca la tua istituzione..." autocomplete="off">
+            <ul class="dropdown-menu w-100 shadow" id="list-institution-select" style="max-height: 250px; overflow-y: auto;"></ul>
         </div>
+        <div class="row">
+            <div class="col-md-6 mb-3"><input type="text" class="form-control" id="reg-name" placeholder="Nome" required></div>
 
         <div class="row">
             <div class="col-md-6 mb-3"><input type="text" class="form-control" id="reg-name" placeholder="Nome" required></div>
@@ -295,7 +298,15 @@
             <div class="col-md-6 mb-3"><input type="password" class="form-control" id="reg-pass" placeholder="Password" required></div>
             <div class="col-md-6 mb-4"><input type="password" class="form-control" id="reg-pass-conf" placeholder="Conferma Password" required></div>
         </div>
-
+        <div class="mb-4 p-3 bg-light rounded-custom border">
+            <label class="form-label small fw-bold text-muted mb-2">REQUISITI PASSWORD</label>
+            <ul class="list-unstyled small mb-0" id="pwd-requirements-list">
+                <li id="req-len" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 8 caratteri</li>
+                <li id="req-spec" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 1 carattere speciale (!@#$%^&*)</li>
+                <li id="req-num" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 1 numero</li>
+                <li id="req-match" class="text-muted"><i class="far fa-circle me-2"></i>Le password coincidono</li>
+            </ul>
+        </div>
         <div class="d-flex justify-content-between">
             <button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button>
             <button type="button" class="btn-login w-auto px-5" onclick="submitRegistration()">Invia</button>
@@ -312,7 +323,15 @@
             <div class="card login-card bg-white p-5">
               <h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Reset Password</h4>
               <form id="reset-form">
-                <div class="mb-3"><select id="reset-institution" class="form-select" required><option value="">Seleziona...</option></select></div>
+<h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Reset Password</h4>
+              <form id="reset-form">
+                <div class="mb-3 position-relative">
+                    <input type="text" class="form-control" id="reset-institution" placeholder="Cerca la tua istituzione..." autocomplete="off">
+                    <ul class="dropdown-menu w-100 shadow" id="list-reset-institution" style="max-height: 250px; overflow-y: auto;"></ul>
+                </div>
+                <div class="mb-3"><input type="text" class="form-control" id="reset-cf" placeholder="Codice Fiscale" required></div>
+                <div class="mb-3"><input type="email" class="form-control" id="reset-email" placeholder="Email" required></div>
+                <div class="mb-3"><input type="text" class="form-control" id="reset-cf" placeholder="Codice Fiscale" required></div>
                 <div class="mb-3"><input type="text" class="form-control" id="reset-cf" placeholder="Codice Fiscale" required></div>
                 <div class="mb-3"><input type="email" class="form-control" id="reset-email" placeholder="Email" required></div>
                 <div class="mb-3"><input type="text" class="form-control" id="reset-pin" placeholder="PIN" required></div>
@@ -526,6 +545,11 @@
             </div>
           </div>
       </div>
+
+    </div>
+
+    <datalist id="list-istituzioni"></datalist>
+
     </main>
 
     <footer class="footer-mur"><div class="container"><div class="text-center text-white small">Ministero dell'Università e della Ricerca / Tutti i diritti riservati © 2020 / Codice Fiscale: 96446770586</div></div></footer>

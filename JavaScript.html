@@ -23,9 +23,12 @@
     'UTENZE': { status: 'ACTIVE', action: openUsersModule } 
   };
 
-  // --- INIZIALIZZAZIONE (Gestione F5 e Refresh) ---
+// --- INIZIALIZZAZIONE (Gestione F5 e Refresh) ---
   document.addEventListener('DOMContentLoaded', function() {
       checkStoredSession();
+// INIZIO MODIFICA
+      setupPasswordValidation(); // Avvia i listener per la password
+// FINE MODIFICA
   });
 
   function checkStoredSession() {
@@ -277,6 +280,63 @@
       });
   }
 
+// --- PASSWORD VALIDATION LOGIC ---
+// INIZIO MODIFICA
+  function setupPasswordValidation() {
+      const p1 = document.getElementById('reg-pass');
+      const p2 = document.getElementById('reg-pass-conf');
+      
+      // Funzione interna di validazione
+      window.isPasswordValid = () => {
+          if(!p1 || !p2) return false;
+          const v1 = p1.value || "";
+          const v2 = p2.value || "";
+
+          // Regole
+          const checkLen = v1.length >= 8;
+          const checkSpec = /[!@#$%^&*(),.?":{}|<>]/.test(v1); // Caratteri speciali
+          const checkNum = /\d/.test(v1); // Almeno un numero
+          const checkMatch = (v1 === v2) && v1.length > 0;
+
+          // Aggiorna UI
+          updateRequirementUI('req-len', checkLen);
+          updateRequirementUI('req-spec', checkSpec);
+          updateRequirementUI('req-num', checkNum);
+          updateRequirementUI('req-match', checkMatch);
+
+          return checkLen && checkSpec && checkNum && checkMatch;
+      };
+
+      // Listener attivi durante la digitazione
+      if(p1 && p2) {
+          p1.addEventListener('input', window.isPasswordValid);
+          p2.addEventListener('input', window.isPasswordValid);
+      }
+  }
+
+  function updateRequirementUI(id, isValid) {
+      const el = document.getElementById(id);
+      if(!el) return;
+      const icon = el.querySelector('i');
+      
+      if (isValid) {
+          el.classList.remove('text-muted');
+          el.classList.add('text-success', 'fw-bold');
+          if(icon) {
+             icon.classList.remove('far', 'fa-circle');
+             icon.classList.add('fas', 'fa-check-circle');
+          }
+      } else {
+          el.classList.remove('text-success', 'fw-bold');
+          el.classList.add('text-muted');
+          if(icon) {
+             icon.classList.remove('fas', 'fa-check-circle');
+             icon.classList.add('far', 'fa-circle');
+          }
+      }
+  }
+// FINE MODIFICA
+
   // --- REGISTRAZIONE & RESET ---
   function loadInstitutions() {
     if (allInstitutions.length > 0) return;
@@ -288,20 +348,93 @@
       toggleLoading(true);
       google.script.run.withSuccessHandler(list => { toggleLoading(false); allInstitutions = list; populateSelects(list); }).withFailureHandler(handleServerError).getInstitutionNames();
   }
-  function populateSelects(list) {
-      const sels = [document.getElementById('institution-select'), document.getElementById('reset-institution')];
-      sels.forEach(sel => {
-          if (!sel) return;
-          sel.innerHTML = '<option value="">Seleziona Istituzione...</option>';
-          list.forEach(i => { const opt = document.createElement('option'); opt.value = i; opt.innerText = i; sel.appendChild(opt); });
+function populateSelects(list) {
+      // Attiva l'autocomplete sui due campi (registrazione e reset)
+      setupAutocomplete(document.getElementById('institution-select'), document.getElementById('list-institution-select'), list);
+      setupAutocomplete(document.getElementById('reset-institution'), document.getElementById('list-reset-institution'), list);
+  }
+
+  // Funzione che crea il menu a tendina mentre scrivi
+  function setupAutocomplete(inputEl, listEl, data) {
+      if (!inputEl || !listEl) return;
+
+      inputEl.addEventListener('input', function() {
+          const val = this.value.toLowerCase();
+          listEl.innerHTML = ''; 
+          
+          if (!val) {
+              listEl.classList.remove('show');
+              return;
+          }
+
+          const filtered = data.filter(i => i.toLowerCase().includes(val));
+
+          if (filtered.length === 0) {
+              listEl.classList.remove('show');
+              return;
+          }
+
+          filtered.forEach(item => {
+              const li = document.createElement('li');
+              const a = document.createElement('a');
+              a.classList.add('dropdown-item');
+              a.style.cursor = 'pointer';
+              a.innerText = item; 
+              
+              a.addEventListener('click', function() {
+                  inputEl.value = item;
+                  listEl.classList.remove('show');
+              });
+              
+              li.appendChild(a);
+              listEl.appendChild(li);
+          });
+
+          listEl.classList.add('show');
+      });
+
+      // Chiude la lista se clicchi fuori
+      document.addEventListener('click', function(e) {
+          if (e.target !== inputEl && e.target !== listEl) {
+              listEl.classList.remove('show');
+          }
       });
   }
-  
-  function submitRegistration() {
+
+function submitRegistration() {
      const inst = document.getElementById('institution-select').value;
      if (!inst) return showToast("Compilare i campi", 'error');
+
+     // NUOVO CONTROLLO DI SICUREZZA
+     // Verifica se la funzione di validazione esiste e se la password è valida
+     if (typeof window.isPasswordValid === 'function' && !window.isPasswordValid()) {
+         return showToast("La password non soddisfa i requisiti di sicurezza.", 'error');
+     }
+
      toggleLoading(true);
-     google.script.run.withSuccessHandler(res => { toggleLoading(false); if(res.success){ showToast("Ok", 'success'); showView('view-login'); } else showToast(res.message, 'error'); }).registerUser({ institutionName: inst, nome: document.getElementById('reg-name').value, cognome: document.getElementById('reg-surname').value, codiceFiscale: document.getElementById('reg-cf').value, email: document.getElementById('reg-email').value, pin: document.getElementById('reg-pin').value, password: document.getElementById('reg-pass').value });
+     
+     // Preparazione oggetto dati
+     const payload = { 
+         institutionName: inst, 
+         nome: document.getElementById('reg-name').value, 
+         cognome: document.getElementById('reg-surname').value, 
+         codiceFiscale: document.getElementById('reg-cf').value, 
+         email: document.getElementById('reg-email').value, 
+         pin: document.getElementById('reg-pin').value, 
+         password: document.getElementById('reg-pass').value 
+     };
+
+     google.script.run
+        .withSuccessHandler(res => { 
+            toggleLoading(false); 
+            if(res.success){ 
+                showToast("Registrazione completata con successo!", 'success'); 
+                showView('view-login'); 
+            } else { 
+                showToast(res.message, 'error'); 
+            } 
+        })
+        .registerUser(payload);
   }
 
   function submitReset() {
