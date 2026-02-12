@@ -737,4 +737,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+function filterUsersTable() {
+      const val = document.getElementById('filter-users-list').value.toLowerCase();
+      const rows = document.querySelectorAll('#tbody-users tr');
+      rows.forEach(row => {
+          const text = row.innerText.toLowerCase();
+          row.style.display = text.includes(val) ? "" : "none";
+      });
+  }
+
+function filterAdminTable() {
+  const input = document.getElementById("filter-admin-cessazioni");
+  const filter = input.value.toLowerCase();
+  const tableBody = document.getElementById("tbody-admin-report");
+  const rows = tableBody.getElementsByTagName("tr");
+
+  for (let i = 0; i < rows.length; i++) {
+    // Cerca il testo in tutte le celle della riga
+    const rowText = rows[i].textContent || rows[i].innerText;
+    if (rowText.toLowerCase().indexOf(filter) > -1) {
+      rows[i].style.display = "";
+    } else {
+      rows[i].style.display = "none";
+    }
+  }
+}
+
 </script>

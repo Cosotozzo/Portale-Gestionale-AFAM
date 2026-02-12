@@ -126,40 +126,6 @@
       .module-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(0,68,136,0.15); border-bottom-color: var(--mur-cyan); }
       .card-body { padding: 2rem; text-align: center; }
       .card-icon { font-size: 2.5rem; color: var(--header-main-bg); margin-bottom: 1rem; }
-
-    /* --- FIX TABELLA ADMIN: TITOLI FERMI E RIGHE SCORREVOLI --- */
-      
-      /* 1. Definiamo l'area "finestra" che contiene i dati */
-      #view-module-cessazioni-admin .table-responsive {
-          height: 65vh !important;      /* Altezza fissa (circa 65% dello schermo) */
-          overflow-y: auto !important;  /* Obbliga la comparsa della barra di scorrimento QUI */
-          border: 1px solid #dee2e6;    /* Un bordo per delimitare l'area di scroll */
-          border-top: none !important;
-          background-color: #fff;       /* Sfondo bianco */
-          display: block;               /* Fix per rendere il div comportante come blocco */
-      }
-
-      /* 2. Blocchiamo i titoli in alto */
-      #view-module-cessazioni-admin thead th {
-          position: sticky !important;
-          top: 0 !important;            /* Si incolla al bordo superiore del box */
-          z-index: 1000 !important;     /* Livello altissimo per stare sopra a tutto */
-          
-          /* STILE VISIVO: Sfondo opaco (CRUCIALE) */
-          background-color: #e9ecef !important; /* Grigio chiaro pieno, NON trasparente */
-          color: #495057;
-          
-          /* Ombreggiatura sotto il titolo per dare l'effetto di "distacco" dalle righe */
-          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); 
-          
-          /* Rimuovi bordi che potrebbero creare artefatti */
-          border-top: none !important;
-      }
-      
-      /* Fix opzionale: se le righe si vedono in trasparenza, forza il background delle righe */
-      #tbody-admin-report tr {
-          background-color: #fff;
-      }
       
       /* Note Textarea con focus visibile */
       .note-textarea { 
@@ -463,7 +429,7 @@
 
                 <div class="input-group shadow-sm search-unified">
                     <span class="input-group-text bg-white ps-3"><i class="fas fa-search text-muted"></i></span>
-                    <input type="text" class="form-control ps-0" id="filter-cessazioni" placeholder="Cerca Nominativo o CF..." onkeyup="renderTable()" autocomplete="off">
+                    <input type="text" class="form-control ps-0" id="filter-admin-cessazioni" placeholder="Cerca Istituzione..." onkeyup="filterAdminTable()" autocomplete="off">
                 </div>
                 </div>
             </div>
@@ -523,18 +489,18 @@
          </div>
 
          <div class="row g-3 mb-3">
-            <div class="col-md-4">
-                <div class="input-group shadow-sm">
-                    <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
-                    <input type="text" class="form-control border-start-0 ps-0" id="filter-admin-cessazioni" placeholder="Cerca Istituzione..." autocomplete="off">
+            <div class="col-md-5">
+                <div class="input-group shadow-sm search-unified">
+                    <span class="input-group-text bg-white ps-3"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" class="form-control ps-0" id="filter-admin-cessazioni" placeholder="Cerca Istituzione..." autocomplete="off">
                 </div>
             </div>
          </div>
 
-         <div class="card border-0 shadow-sm rounded-custom">
-            <div class="table-responsive" style="max-height: 65vh; overflow-y: auto;">
+         <div class="card border-0 shadow-sm rounded-custom mb-5">
+            <div class="table-responsive">
                <table class="table table-hover align-middle mb-0 table-rounded">
-                  <thead class="table-light text-uppercase small text-muted" style="position: sticky; top: 0; z-index: 10;">
+                  <thead class="table-light text-uppercase small text-muted">
                      <tr>
                         <th>Istituzione</th>
                         <th class="text-center">Stato</th>
@@ -562,10 +528,19 @@
               </button>
           </div>
 
-          <div class="card border-0 shadow-sm rounded-custom">
-            <div class="table-responsive" style="max-height: 65vh; overflow-y: auto;">
+          <div class="row g-3 mb-3">
+            <div class="col-md-5">
+                <div class="input-group shadow-sm search-unified">
+                    <span class="input-group-text bg-white ps-3"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" class="form-control ps-0" id="filter-users-list" placeholder="Cerca Nominativo, CF o Istituzione..." onkeyup="filterUsersTable()" autocomplete="off">
+                </div>
+            </div>
+          </div>
+
+          <div class="card border-0 shadow-sm rounded-custom mb-5">
+            <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0 table-rounded">
-                  <thead class="table-light text-uppercase small text-muted" style="position: sticky; top: 0; z-index: 10;">
+                  <thead class="table-light text-uppercase small text-muted">
                       <tr>
                         <th>Data</th>
                         <th>Nominativo</th>
