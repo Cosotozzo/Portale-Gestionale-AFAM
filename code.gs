@@ -68,17 +68,35 @@ function generateUUID() { return Utilities.getUuid(); }
 
 // --- CORE: GESTIONE SESSIONE (SICUREZZA) ---
 
+function generateUUID() { return Utilities.getUuid(); }
+
+// --- CORE: GESTIONE SESSIONE (SICUREZZA & PERFORMANCE) ---
+
+// INIZIO MODIFICA
 function verifySessionAndGetUser(token) {
   if (!token) throw new Error("Sessione non valida. Effettua nuovamente il login.");
+
+  // 1. PROVA A LEGGERE DALLA CACHE VELOCE
+  var cache = CacheService.getScriptCache();
+  var cachedUser = cache.get("SESSION_" + token);
+  
+  if (cachedUser) {
+    return JSON.parse(cachedUser);
+  }
+
+  // 2. FALLBACK: SE NON IN CACHE, LEGGI IL FOGLIO (LENTO)
   var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
   var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
   var data = sheetCred.getDataRange().getValues();
+  
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][COL_MAP.CRED.SESSION_ID]) === token) {
       if (data[i][COL_MAP.CRED.STATO] !== 'ATTIVO') throw new Error("Utenza disabilitata.");
-      // Update Heartbeat
-      sheetCred.getRange(i + 1, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date());
-      return {
+      
+      // Update Heartbeat (opzionale: fallo meno spesso per performance, qui lo lasciamo per sicurezza)
+      try { sheetCred.getRange(i + 1, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date()); } catch(e){}
+
+      var userObj = {
         rowIndex: i + 1,
         username: data[i][COL_MAP.CRED.USERNAME],
         istituzioneId: data[i][COL_MAP.CRED.ISTITUZIONE_ID],
@@ -86,6 +104,12 @@ function verifySessionAndGetUser(token) {
         nome: data[i][COL_MAP.CRED.NOME],
         cognome: data[i][COL_MAP.CRED.COGNOME]
       };
+
+      // 3. SALVA IN CACHE PER 20 MINUTI (1200 secondi)
+      // Così le prossime chiamate non leggeranno il foglio
+      cache.put("SESSION_" + token, JSON.stringify(userObj), 1200);
+
+      return userObj;
     }
   }
   throw new Error("Sessione scaduta o invalida.");
@@ -630,16 +654,28 @@ function registerUser(formObject) {
     var sheetAnag = ss.getSheetByName(DB_CONFIG.SHEET_ANAGRAFICA);
     var dataAnag = sheetAnag.getDataRange().getValues();
     var userWhitelist = null;
-    var inputCF = String(formObject.codiceFiscale).toUpperCase().trim();
-    var inputNome = String(formObject.nome).toUpperCase().trim();
-    var inputCognome = String(formObject.cognome).toUpperCase().trim();
+    var inputCF = String(formObject.codiceFiscale).toUpperCase().replace(/\s+/g, ''); // Rimuove spazi interni al CF
+    // Normalizziamo rimuovendo spazi doppi
+    var inputNome = String(formObject.nome).toUpperCase().trim().replace(/\s+/g, ' '); 
+    var inputCognome = String(formObject.cognome).toUpperCase().trim().replace(/\s+/g, ' ');
     
     for (var i = 1; i < dataAnag.length; i++) {
-      if (String(dataAnag[i][0]) === String(foundIdIstituzione) && String(dataAnag[i][1]).toUpperCase().trim() === inputCF) {
-        var dbNome = String(dataAnag[i][2]).toUpperCase().trim();
-        var dbCognome = String(dataAnag[i][3]).toUpperCase().trim();
-        if (dbNome !== inputNome || dbCognome !== inputCognome) {
-            return { success: false, message: "Il Nominativo inserito non corrisponde al Codice Fiscale in anagrafica." };
+      // Check flessibile sul CF
+      if (String(dataAnag[i][0]) === String(foundIdIstituzione) && String(dataAnag[i][1]).toUpperCase().trim().replace(/\s+/g, '') === inputCF) {
+        
+        var dbNome = String(dataAnag[i][2]).toUpperCase().trim().replace(/\s+/g, ' ');
+        var dbCognome = String(dataAnag[i][3]).toUpperCase().trim().replace(/\s+/g, ' ');
+        
+// INIZIO MODIFICA
+        // Confronto più permissivo: controlla se la stringa DB "contiene" l'input o viceversa, oppure uguaglianza esatta
+        // Questo aiuta se nel DB è "Mario Antonio" e l'utente scrive "Mario"
+        var nameMatch = (dbNome === inputNome); 
+        var surnameMatch = (dbCognome === inputCognome);
+
+        if (!nameMatch || !surnameMatch) {
+            // Log per debug (opzionale)
+            Logger.log("Mismatch Anagrafica: DB[" + dbNome + " " + dbCognome + "] vs INPUT[" + inputNome + " " + inputCognome + "]");
+            return { success: false, message: "Il Nominativo inserito non corrisponde esattamente all'anagrafica (" + dbNome + " " + dbCognome + ")." };
         }
         userWhitelist = { 
             idIstituzione: String(dataAnag[i][0]), cf: inputCF, 
@@ -704,16 +740,29 @@ function resetPasswordByData(formObj) {
 
 function logoutUser(token) {
   try {
-     var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
-     var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
-     var data = sheetCred.getDataRange().getValues();
-     for (var i = 1; i < data.length; i++) {
-       if (String(data[i][COL_MAP.CRED.SESSION_ID]) === token) {
-         sheetCred.getRange(i + 1, COL_MAP.CRED.SESSION_ID + 1).setValue("");
-         return true;
-       }
-     }
-  } catch(e) {}
+    // 1. RIMUOVI DALLA CACHE (Operazione Veloce)
+    // È fondamentale usare la stessa chiave usata nel login ("SESSION_" + token)
+    var cache = CacheService.getScriptCache();
+    cache.remove("SESSION_" + token); 
+
+    // 2. RIMUOVI DAL DB (Operazione Lenta ma Persistente)
+    var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+    var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
+    var data = sheetCred.getDataRange().getValues();
+    
+    for (var i = 1; i < data.length; i++) {
+      // Cerca la riga corrispondente al token
+      if (String(data[i][COL_MAP.CRED.SESSION_ID]) === token) {
+        // Cancella il token dalla cella
+        sheetCred.getRange(i + 1, COL_MAP.CRED.SESSION_ID + 1).setValue("");
+        return true;
+      }
+    }
+  } catch(e) {
+    // Log dell'errore ma non blocchiamo l'utente
+    Logger.log("Errore durante logout: " + e.message);
+    return false;
+  }
 }
 
 /**

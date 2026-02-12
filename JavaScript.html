@@ -1,7 +1,7 @@
 <script>
   /**
    * PORTALE GESTIONALE AFAM
-   * Versione: 16.0 (Session Persistence + Inactivity Timeout)
+   * Versione: 16.0 (Session Persistence + Inactivity Timeout)if 
    */
 
   // --- VARIABILI GLOBALI ---
@@ -539,18 +539,25 @@ function submitRegistration() {
 
   function renderTable() {
       const tbody = document.getElementById('tbody-cessazioni');
-      tbody.innerHTML = '';
       const filterEl = document.getElementById('filter-cessazioni');
       const filterVal = filterEl ? filterEl.value.toLowerCase().trim() : "";
       let counts = { tot: 0, app: 0, rej: 0, mod: 0, pend: 0 };
+      
+      // Performance: Array buffer per l'HTML
+      let htmlBuffer = [];
 
-      if (!cessazioniData.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Nessun dato.</td></tr>'; updateStats(counts); return; }
+      if (!cessazioniData.length) { 
+          tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Nessun dato.</td></tr>'; 
+          updateStats(counts); 
+          return; 
+      }
       
       cessazioniData.forEach((row, idx) => {
           const fullName = (row.cognome + " " + row.nome).toLowerCase();
           const cf = (row.cf || "").toLowerCase();
-          // Se c'è testo nel filtro e NON corrisponde né al nome né al CF, saltiamo la riga
+          
           if (filterVal !== "" && !fullName.includes(filterVal) && !cf.includes(filterVal)) return;
+          
           counts.tot++;
           if (row.azione === 'APPROVA') counts.app++;
           else if (row.azione === 'MODIFICA') counts.mod++;
@@ -562,19 +569,22 @@ function submitRegistration() {
           const isRif = row.azione === 'RIFIUTA';
           const noteDis = (!isMod || cessazioniReadOnly) ? 'disabled' : '';
           const placeholder = isMod ? "Inserisci motivazione modifica..." : "...";
+          const rowClass = !row.azione ? 'table-warning' : '';
 
-          let btns = `<div class="btn-group shadow-sm">
-              <button class="btn btn-sm ${isAppr?'btn-success':'btn-outline-success'}" onclick="act(${idx}, 'APPROVA')" ${cessazioniReadOnly?'disabled':''} title="Approva"><i class="fas fa-check"></i></button>
-              <button class="btn btn-sm ${isMod?'btn-warning':'btn-outline-warning'}" onclick="act(${idx}, 'MODIFICA')" ${cessazioniReadOnly?'disabled':''} title="Modifica"><i class="fas fa-edit"></i></button>
-              <button class="btn btn-sm ${isRif?'btn-danger':'btn-outline-danger'}" onclick="act(${idx}, 'RIFIUTA')" ${cessazioniReadOnly?'disabled':''} title="Rifiuta"><i class="fas fa-times"></i></button>
-          </div>`;
-          
-          tbody.innerHTML += `<tr class="${!row.azione?'table-warning':''}">
+          // Costruzione stringa ottimizzata
+          htmlBuffer.push(`
+            <tr class="${rowClass}">
               <td class="fw-bold text-nowrap">${escapeHtml(row.cognome)} ${escapeHtml(row.nome)}</td>
               <td>${escapeHtml(row.cf)}</td>
               <td>${escapeHtml(row.dataNascita)}</td>
               <td>${escapeHtml(row.eta)}</td>
-              <td class="text-center">${btns}</td>
+              <td class="text-center">
+                  <div class="btn-group shadow-sm">
+                    <button class="btn btn-sm ${isAppr?'btn-success':'btn-outline-success'}" onclick="act(${idx}, 'APPROVA')" ${cessazioniReadOnly?'disabled':''} title="Approva"><i class="fas fa-check"></i></button>
+                    <button class="btn btn-sm ${isMod?'btn-warning':'btn-outline-warning'}" onclick="act(${idx}, 'MODIFICA')" ${cessazioniReadOnly?'disabled':''} title="Modifica"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm ${isRif?'btn-danger':'btn-outline-danger'}" onclick="act(${idx}, 'RIFIUTA')" ${cessazioniReadOnly?'disabled':''} title="Rifiuta"><i class="fas fa-times"></i></button>
+                  </div>
+              </td>
               <td>
                 <textarea id="note-txt-${idx}" 
                           class="form-control form-control-sm note-textarea" 
@@ -583,8 +593,11 @@ function submitRegistration() {
                           oninput="updNote(${idx}, this.value)" 
                           ${noteDis}>${escapeHtml(row.note)}</textarea>
               </td>
-          </tr>`;
+          </tr>`);
       });
+
+      // Scrittura DOM unica (Molto più veloce)
+      tbody.innerHTML = htmlBuffer.join('');
       updateStats(counts);
   }
 
@@ -605,47 +618,59 @@ function submitRegistration() {
   function updNote(idx, val) { cessazioniData[idx].note = val; }
   
   function saveCessazioniAction(mode) {
+      // 1. VALIDAZIONI PRELIMINARI (Solo per invio definitivo)
       if (mode === 'FINAL') {
+          // Controlla che tutte le righe abbiano una azione
           if (cessazioniData.some(r => !r.azione)) { 
               return showToast("Attenzione: Devi validare tutte le righe prima di inviare.", 'warning'); 
           }
+          // Controlla che le modifiche abbiano una nota
           if (cessazioniData.some(r => r.azione === 'MODIFICA' && (!r.note || r.note.trim() === ''))) { 
               return showToast("Attenzione: La nota è obbligatoria per le modifiche.", 'error'); 
           }
       }
 
+      // 2. PREPARAZIONE DATI
       const chkEl = document.getElementById('chk-nuova-finestra');
       const reqNew = chkEl ? chkEl.checked : false;
-      const payload = { mode: mode, rows: cessazioniData, richiestaNuovaFinestra: reqNew };
+      const payload = { 
+          mode: mode, 
+          rows: cessazioniData, 
+          richiestaNuovaFinestra: reqNew 
+      };
 
-      if (mode === 'FINAL') {
-          showToast("Dati inseriti correttamente.", 'success');
-          showView('view-gateway');
-          cessazioniReadOnly = true; 
-          cessazioniData = []; 
-          document.getElementById('tbody-cessazioni').innerHTML = ''; 
+      // Mostra il caricamento per impedire doppi click
+      toggleLoading(true);
 
-          google.script.run
-            .withFailureHandler(err => {
-                console.error("Errore salvataggio background: ", err);
-                showToast("ATTENZIONE: Errore nel salvataggio dei dati.", 'error');
-            })
-            .saveCessazioni(currentUser.token, payload);
-
-      } else {
-          toggleLoading(true);
-          google.script.run
-            .withSuccessHandler(res => {
-                toggleLoading(false);
-                if(res.success) showToast(res.message, 'success');
-                else showToast(res.message, 'error');
-            })
-            .withFailureHandler(err => {
-                toggleLoading(false);
-                showToast("Errore salvataggio bozza: " + err.message, 'error');
-            })
-            .saveCessazioni(currentUser.token, payload);
-      }
+      // 3. CHIAMATA AL SERVER
+      google.script.run
+        .withSuccessHandler(res => {
+            toggleLoading(false); // Nascondi caricamento
+            
+            if (res.success) {
+                // CASO SUCCESSO
+                showToast(res.message, 'success');
+                
+                if (mode === 'FINAL') {
+                    // Se era un invio definitivo, pulisci l'interfaccia e torna alla home
+                    showView('view-gateway');
+                    cessazioniReadOnly = true; 
+                    cessazioniData = []; 
+                    document.getElementById('tbody-cessazioni').innerHTML = ''; 
+                }
+            } else {
+                // CASO ERRORE LOGICO (es. utente disabilitato, dati incongruenti)
+                showToast("Errore dal server: " + res.message, 'error');
+                // I dati rimangono a video per permettere di correggere
+            }
+        })
+        .withFailureHandler(err => {
+            toggleLoading(false); // Nascondi caricamento
+            console.error("Errore critico salvataggio: ", err);
+            showToast("Errore di connessione o timeout. Riprova.", 'error');
+            // I dati rimangono a video, non sono persi
+        })
+        .saveCessazioni(currentUser.token, payload);
   }
 
   // --- GESTIONE UTENZE (ADMIN) ---
