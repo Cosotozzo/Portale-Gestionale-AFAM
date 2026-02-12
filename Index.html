@@ -27,8 +27,28 @@
       .main-container { flex: 1 0 auto; }
       
       /* UTILS */
-      .rounded-custom { border-radius: 12px !important; overflow: hidden; }
-      .table-rounded { border-radius: 12px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
+      .rounded-custom { border-radius: 20px !important; overflow: hidden; }
+      .table-rounded { border-radius: 20px; border-collapse: separate; border-spacing: 0; overflow: hidden; } 
+      /* Stile per barra di ricerca unificata (Lente + Input) */
+      .search-unified {
+          border: 1px solid #dee2e6; /* Bordo unico esterno */
+          border-radius: 20px !important; 
+          transition: all 0.2s ease-in-out;
+          overflow: hidden; /* Taglia i figli agli angoli */
+          background-color: #fff;
+      }
+      /* Effetto Focus sul Contenitore */
+      .search-unified:focus-within {
+          border-color: #86b7fe;
+          box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25); /* Glow blu */
+      }
+      /* Rimozione bordi e focus nativi dai figli */
+      .search-unified input, .search-unified span {
+          border: none !important; 
+      }
+      .search-unified .form-control:focus {
+          box-shadow: none !important; /* Spegne il focus nativo dell'input */
+      }
       .hidden { display: none !important; }
       .spinner-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.95); z-index: 9999; display: flex; justify-content: center; align-items: center; }
 
@@ -114,6 +134,7 @@
           height: 65vh !important;      /* Altezza fissa (circa 65% dello schermo) */
           overflow-y: auto !important;  /* Obbliga la comparsa della barra di scorrimento QUI */
           border: 1px solid #dee2e6;    /* Un bordo per delimitare l'area di scroll */
+          border-top: none !important;
           background-color: #fff;       /* Sfondo bianco */
           display: block;               /* Fix per rendere il div comportante come blocco */
       }
@@ -436,6 +457,16 @@
                </div>
             </div>
          </div>
+
+         <div class="row g-3 mb-3">
+            <div class="col-md-5">
+
+                <div class="input-group shadow-sm search-unified">
+                    <span class="input-group-text bg-white ps-3"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" class="form-control ps-0" id="filter-cessazioni" placeholder="Cerca Nominativo o CF..." onkeyup="renderTable()" autocomplete="off">
+                </div>
+                </div>
+            </div>
 
          <div class="card border-0 shadow-sm rounded-custom mb-4">
             <div class="table-responsive">

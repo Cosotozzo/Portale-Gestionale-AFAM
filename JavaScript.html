@@ -540,11 +540,17 @@ function submitRegistration() {
   function renderTable() {
       const tbody = document.getElementById('tbody-cessazioni');
       tbody.innerHTML = '';
+      const filterEl = document.getElementById('filter-cessazioni');
+      const filterVal = filterEl ? filterEl.value.toLowerCase().trim() : "";
       let counts = { tot: 0, app: 0, rej: 0, mod: 0, pend: 0 };
 
       if (!cessazioniData.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Nessun dato.</td></tr>'; updateStats(counts); return; }
       
       cessazioniData.forEach((row, idx) => {
+          const fullName = (row.cognome + " " + row.nome).toLowerCase();
+          const cf = (row.cf || "").toLowerCase();
+          // Se c'è testo nel filtro e NON corrisponde né al nome né al CF, saltiamo la riga
+          if (filterVal !== "" && !fullName.includes(filterVal) && !cf.includes(filterVal)) return;
           counts.tot++;
           if (row.azione === 'APPROVA') counts.app++;
           else if (row.azione === 'MODIFICA') counts.mod++;
