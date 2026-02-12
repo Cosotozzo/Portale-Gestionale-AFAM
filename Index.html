@@ -250,69 +250,67 @@
             </div>
           </div>
         </div>
-      </div>
+</div>
 
-      <div id="view-register" class="view-section hidden">
+<div id="view-register" class="view-section hidden">
         <div class="row justify-content-center">
           <div class="col-12 col-md-8">
-<div class="card login-card bg-white p-5">
-    <h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Richiesta Nuova Utenza</h4>
-    <form id="register-form">
-<h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Richiesta Nuova Utenza</h4>
-    <form id="register-form">
-        <div class="mb-3 position-relative">
-            <label class="form-label small fw-bold text-muted">ISTITUZIONE</label>
-            <input type="text" class="form-control" id="institution-select" placeholder="Cerca la tua istituzione..." autocomplete="off">
-            <ul class="dropdown-menu w-100 shadow" id="list-institution-select" style="max-height: 250px; overflow-y: auto;"></ul>
-        </div>
-        <div class="row">
-            <div class="col-md-6 mb-3"><input type="text" class="form-control" id="reg-name" placeholder="Nome" required></div>
+            <div class="card login-card bg-white p-5">
+                <h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Richiesta Nuova Utenza</h4>
+                <form id="register-form">
+                    <div class="mb-3 position-relative">
+                        <label class="form-label small fw-bold text-muted">ISTITUZIONE</label>
+                        <input type="text" class="form-control" id="institution-select" placeholder="Cerca la tua istituzione..." autocomplete="off">
+                        <ul class="dropdown-menu w-100 shadow" id="list-institution-select" style="max-height: 250px; overflow-y: auto;"></ul>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3"><input type="text" class="form-control" id="reg-name" placeholder="Nome" required></div>
+                        <div class="col-md-6 mb-3"><input type="text" class="form-control" id="reg-surname" placeholder="Cognome" required></div>
+                    </div>
 
-        <div class="row">
-            <div class="col-md-6 mb-3"><input type="text" class="form-control" id="reg-name" placeholder="Nome" required></div>
-            <div class="col-md-6 mb-3"><input type="text" class="form-control" id="reg-surname" placeholder="Cognome" required></div>
-        </div>
+                    <div class="mb-3"><input type="text" class="form-control" id="reg-cf" placeholder="Codice Fiscale" required></div>
+                    <div class="mb-3"><input type="email" class="form-control" id="reg-email" placeholder="Email Istituzionale" required></div>
 
-        <div class="mb-3"><input type="text" class="form-control" id="reg-cf" placeholder="Codice Fiscale" required></div>
-        <div class="mb-3"><input type="email" class="form-control" id="reg-email" placeholder="Email Istituzionale" required></div>
+                    <div class="mb-4 p-3 bg-white border border-danger rounded-custom shadow-sm" style="border-left: 5px solid #dc3545 !important;">
+                        <label for="reg-pin" class="form-label fw-bold text-danger small mb-2"><i class="fas fa-key me-1"></i>PIN DI SICUREZZA (OBBLIGATORIO)</label>
+                        <input type="text" 
+                               class="form-control border-danger fw-bold fs-5 text-center text-danger" 
+                               id="reg-pin" 
+                               placeholder="PIN (6 CARATTERI)" 
+                               maxlength="6" 
+                               style="text-transform:uppercase; letter-spacing: 3px;" 
+                               oninput="this.value = this.value.toUpperCase()"
+                               autocomplete="off"
+                               required>
+                        <div class="mt-2 small text-muted fst-italic">
+                            <i class="fas fa-exclamation-circle text-warning me-1"></i>
+                            <strong>IMPORTANTE:</strong> Questo codice è <u>necessario</u> per reimpostare la tua password in caso di smarrimento. Conservalo in un luogo sicuro, non sarà possibile visualizzarlo di nuovo né recuperarlo. 
+                            Per ragioni di sicurezza, non condividere il codice con <u>nessuno</u>.
+                        </div>
+                    </div>
 
-        <div class="mb-4 p-3 bg-white border border-danger rounded-custom shadow-sm" style="border-left: 5px solid #dc3545 !important;">
-            <label for="reg-pin" class="form-label fw-bold text-danger small mb-2"><i class="fas fa-key me-1"></i>PIN DI SICUREZZA (OBBLIGATORIO)</label>
-            <input type="text" 
-                   class="form-control border-danger fw-bold fs-5 text-center text-danger" 
-                   id="reg-pin" 
-                   placeholder="PIN (6 CARATTERI)" 
-                   maxlength="6" 
-                   style="text-transform:uppercase; letter-spacing: 3px;" 
-                   oninput="this.value = this.value.toUpperCase()"
-                   autocomplete="off"
-                   required>
-            <div class="mt-2 small text-muted fst-italic">
-                <i class="fas fa-exclamation-circle text-warning me-1"></i>
-                <strong>IMPORTANTE:</strong> Questo codice è <u>necessario</u> per reimpostare la tua password in caso di smarrimento. Conservalo in un luogo sicuro, non sarà possibile visualizzarlo di nuovo né recuperarlo. 
-                Per ragioni di sicurezza, non condividere il codice con <u>nessuno</u>.
+                    <div class="row">
+                        <div class="col-md-6 mb-3"><input type="password" class="form-control" id="reg-pass" placeholder="Password" required></div>
+                        <div class="col-md-6 mb-4"><input type="password" class="form-control" id="reg-pass-conf" placeholder="Conferma Password" required></div>
+                    </div>
+                    
+                    <div class="mb-4 p-3 bg-light rounded-custom border">
+                        <label class="form-label small fw-bold text-muted mb-2">REQUISITI PASSWORD</label>
+                        <ul class="list-unstyled small mb-0" id="pwd-requirements-list">
+                            <li id="req-len" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 8 caratteri</li>
+                            <li id="req-spec" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 1 carattere speciale (!@#$%^&*)</li>
+                            <li id="req-num" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 1 numero</li>
+                            <li id="req-match" class="text-muted"><i class="far fa-circle me-2"></i>Le password coincidono</li>
+                        </ul>
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button>
+                        <button type="button" class="btn-login w-auto px-5" onclick="submitRegistration()">Invia</button>
+                    </div>
+                </form>
             </div>
-        </div>
-
-        <div class="row">
-            <div class="col-md-6 mb-3"><input type="password" class="form-control" id="reg-pass" placeholder="Password" required></div>
-            <div class="col-md-6 mb-4"><input type="password" class="form-control" id="reg-pass-conf" placeholder="Conferma Password" required></div>
-        </div>
-        <div class="mb-4 p-3 bg-light rounded-custom border">
-            <label class="form-label small fw-bold text-muted mb-2">REQUISITI PASSWORD</label>
-            <ul class="list-unstyled small mb-0" id="pwd-requirements-list">
-                <li id="req-len" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 8 caratteri</li>
-                <li id="req-spec" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 1 carattere speciale (!@#$%^&*)</li>
-                <li id="req-num" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 1 numero</li>
-                <li id="req-match" class="text-muted"><i class="far fa-circle me-2"></i>Le password coincidono</li>
-            </ul>
-        </div>
-        <div class="d-flex justify-content-between">
-            <button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button>
-            <button type="button" class="btn-login w-auto px-5" onclick="submitRegistration()">Invia</button>
-        </div>
-    </form>
-</div>
           </div>
         </div>
       </div>
@@ -323,27 +321,26 @@
             <div class="card login-card bg-white p-5">
               <h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Reset Password</h4>
               <form id="reset-form">
-<h4 class="mb-4 fw-bold" style="color: var(--header-main-bg);">Reset Password</h4>
-              <form id="reset-form">
                 <div class="mb-3 position-relative">
                     <input type="text" class="form-control" id="reset-institution" placeholder="Cerca la tua istituzione..." autocomplete="off">
                     <ul class="dropdown-menu w-100 shadow" id="list-reset-institution" style="max-height: 250px; overflow-y: auto;"></ul>
                 </div>
                 <div class="mb-3"><input type="text" class="form-control" id="reset-cf" placeholder="Codice Fiscale" required></div>
                 <div class="mb-3"><input type="email" class="form-control" id="reset-email" placeholder="Email" required></div>
-                <div class="mb-3"><input type="text" class="form-control" id="reset-cf" placeholder="Codice Fiscale" required></div>
-                <div class="mb-3"><input type="text" class="form-control" id="reset-cf" placeholder="Codice Fiscale" required></div>
-                <div class="mb-3"><input type="email" class="form-control" id="reset-email" placeholder="Email" required></div>
                 <div class="mb-3"><input type="text" class="form-control" id="reset-pin" placeholder="PIN" required></div>
                 <div class="mb-3"><input type="password" class="form-control" id="reset-new-pass" placeholder="Nuova Password" required></div>
-                <div class="d-flex justify-content-between"><button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button><button type="button" class="btn-login w-50" onclick="submitReset()">Salva</button></div>
+                
+                <div class="d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button>
+                    <button type="button" class="btn-login w-50" onclick="submitReset()">Salva</button>
+                </div>
               </form>
             </div>
           </div>
         </div>
       </div>
-
-      <div id="view-gateway" class="view-section hidden">
+      
+<div id="view-gateway" class="view-section hidden">
          <h2 class="mb-5 fw-bold" style="color: var(--header-main-bg); border-left: 5px solid var(--mur-cyan); padding-left: 15px;">Dashboard Servizi</h2>
          <div class="row g-4">
             <div class="col-md-6 col-lg-3">
