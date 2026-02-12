@@ -339,7 +339,7 @@
           </div>
         </div>
       </div>
-      
+
 <div id="view-gateway" class="view-section hidden">
          <h2 class="mb-5 fw-bold" style="color: var(--header-main-bg); border-left: 5px solid var(--mur-cyan); padding-left: 15px;">Dashboard Servizi</h2>
          <div class="row g-4">
@@ -471,17 +471,16 @@
                 </style>
              </div>
 
-              <div id="btn-container" class="d-flex gap-3">
-                  <button class="btn btn-outline-dark rounded-pill px-4 py-2 fw-bold" onclick="saveCessazioniAction('DRAFT')">
-                      <i class="far fa-save me-2"></i>Salva Bozza
-                  </button>
-                  
-                  <button class="btn btn-success rounded-pill px-5 py-2 fw-bold shadow" onclick="saveCessazioniAction('FINAL')">
-                      Conferma e Invia <i class="fas fa-paper-plane ms-2"></i>
-                  </button>
-              </div>
-         </div>
-      </div> <div id="view-module-cessazioni-admin" class="view-section hidden">
+<div id="btn-container" class="d-flex gap-3">
+                 <button class="btn btn-outline-dark rounded-pill px-4 py-2 fw-bold" onclick="saveCessazioniAction('DRAFT')">
+                     <i class="far fa-save me-2"></i>Salva Bozza
+                 </button>
+                 
+                 <button class="btn btn-success rounded-pill px-5 py-2 fw-bold shadow" onclick="saveCessazioniAction('FINAL')">
+                     Conferma e Invia <i class="fas fa-paper-plane ms-2"></i>
+                 </button>
+             </div>
+         </div> </div> <div id="view-module-cessazioni-admin" class="view-section hidden">
          <div class="d-flex justify-content-between align-items-center mb-4">
              <div>
                <h3 class="fw-bold" style="color: var(--header-main-bg);">Monitoraggio Cessazioni</h3>
@@ -492,10 +491,19 @@
              </button>
          </div>
 
+         <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="input-group shadow-sm">
+                    <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" class="form-control border-start-0 ps-0" id="filter-admin-cessazioni" placeholder="Cerca Istituzione..." autocomplete="off">
+                </div>
+            </div>
+         </div>
+
          <div class="card border-0 shadow-sm rounded-custom">
-            <div class="table-responsive">
+            <div class="table-responsive" style="max-height: 65vh; overflow-y: auto;">
                <table class="table table-hover align-middle mb-0 table-rounded">
-                  <thead class="table-light text-uppercase small text-muted">
+                  <thead class="table-light text-uppercase small text-muted" style="position: sticky; top: 0; z-index: 10;">
                      <tr>
                         <th>Istituzione</th>
                         <th class="text-center">Stato</th>
@@ -508,12 +516,11 @@
                      </tr>
                   </thead>
                   <tbody id="tbody-admin-report">
-                     </tbody>
+                  </tbody>
                </table>
             </div>
          </div>
-      </div>
-      <div id="view-module-users" class="view-section hidden">
+      </div> <div id="view-module-users" class="view-section hidden">
           <div class="d-flex justify-content-between align-items-center mb-4">
               <div>
                 <h3 class="fw-bold" style="color: var(--header-main-bg);">Gestione Richieste Accesso</h3>
