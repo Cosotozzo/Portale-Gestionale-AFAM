@@ -618,13 +618,21 @@ function submitRegistration() {
   function updNote(idx, val) { cessazioniData[idx].note = val; }
   
   function saveCessazioniAction(mode) {
+  function act(idx, act) { 
+      if(cessazioniReadOnly) return; 
+      cessazioniData[idx].azione = act; 
+      renderTable();
+      if(act === 'MODIFICA') setTimeout(() => { const el=document.getElementById('note-txt-'+idx); if(el) el.focus(); }, 50);
+  }
+  function updNote(idx, val) { cessazioniData[idx].note = val; }
+  
+// INIZIO MODIFICA
+  function saveCessazioniAction(mode) {
       // 1. VALIDAZIONI PRELIMINARI (Solo per invio definitivo)
       if (mode === 'FINAL') {
-          // Controlla che tutte le righe abbiano una azione
           if (cessazioniData.some(r => !r.azione)) { 
               return showToast("Attenzione: Devi validare tutte le righe prima di inviare.", 'warning'); 
           }
-          // Controlla che le modifiche abbiano una nota
           if (cessazioniData.some(r => r.azione === 'MODIFICA' && (!r.note || r.note.trim() === ''))) { 
               return showToast("Attenzione: La nota è obbligatoria per le modifiche.", 'error'); 
           }
@@ -639,38 +647,64 @@ function submitRegistration() {
           richiestaNuovaFinestra: reqNew 
       };
 
-      // Mostra il caricamento per impedire doppi click
+      // Gestione UX differenziata
       toggleLoading(true);
+      
+      // Se è un salvataggio finale, imposta messaggio e delay minimo
+      let loadingTextEl = document.querySelector('#loading .fw-bold');
+      let originalLoadingText = loadingTextEl ? loadingTextEl.innerText : "Elaborazione in corso...";
+      
+      if (mode === 'FINAL') {
+          if(loadingTextEl) loadingTextEl.innerText = "Validazione, invio al protocollo e consolidamento dati in corso... (Attendere)";
+          
+          // Pattern Promise.all per garantire un tempo minimo di visualizzazione (10 secondi)
+          const delayPromise = new Promise(resolve => setTimeout(resolve, 10000));
+          
+          const serverPromise = new Promise((resolve, reject) => {
+              google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler(reject)
+                .saveCessazioni(currentUser.token, payload);
+          });
 
-      // 3. CHIAMATA AL SERVER
-      google.script.run
-        .withSuccessHandler(res => {
-            toggleLoading(false); // Nascondi caricamento
-            
-            if (res.success) {
-                // CASO SUCCESSO
-                showToast(res.message, 'success');
-                
-                if (mode === 'FINAL') {
-                    // Se era un invio definitivo, pulisci l'interfaccia e torna alla home
+          Promise.all([serverPromise, delayPromise])
+            .then(([res, _]) => {
+                // Ripristino UI
+                if(loadingTextEl) loadingTextEl.innerText = originalLoadingText;
+                toggleLoading(false);
+
+                if (res.success) {
+                    showToast(res.message, 'success');
+                    // Redirect alla dashboard e reset variabili
                     showView('view-gateway');
                     cessazioniReadOnly = true; 
                     cessazioniData = []; 
                     document.getElementById('tbody-cessazioni').innerHTML = ''; 
+                } else {
+                    showToast("Errore dal server: " + res.message, 'error');
                 }
-            } else {
-                // CASO ERRORE LOGICO (es. utente disabilitato, dati incongruenti)
-                showToast("Errore dal server: " + res.message, 'error');
-                // I dati rimangono a video per permettere di correggere
-            }
-        })
-        .withFailureHandler(err => {
-            toggleLoading(false); // Nascondi caricamento
-            console.error("Errore critico salvataggio: ", err);
-            showToast("Errore di connessione o timeout. Riprova.", 'error');
-            // I dati rimangono a video, non sono persi
-        })
-        .saveCessazioni(currentUser.token, payload);
+            })
+            .catch(err => {
+                if(loadingTextEl) loadingTextEl.innerText = originalLoadingText;
+                toggleLoading(false);
+                console.error("Errore critico salvataggio: ", err);
+                showToast("Errore di connessione o timeout. Riprova.", 'error');
+            });
+
+      } else {
+          // SALVATAGGIO BOZZA (Comportamento Standard Veloce)
+          google.script.run
+            .withSuccessHandler(res => {
+                toggleLoading(false);
+                if (res.success) showToast(res.message, 'success');
+                else showToast("Errore: " + res.message, 'error');
+            })
+            .withFailureHandler(err => {
+                toggleLoading(false);
+                handleServerError(err);
+            })
+            .saveCessazioni(currentUser.token, payload);
+      }
   }
 
   // --- GESTIONE UTENZE (ADMIN) ---
