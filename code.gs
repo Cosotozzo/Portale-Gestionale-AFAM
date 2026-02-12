@@ -91,6 +91,33 @@ function verifySessionAndGetUser(token) {
   throw new Error("Sessione scaduta o invalida.");
 }
 
+// INIZIO MODIFICA
+/**
+ * Tenta di ripristinare la sessione utente dato un token.
+ * Usato dal frontend al refresh (F5) della pagina.
+ */
+function restoreSession(token) {
+  try {
+    // Riutilizziamo la logica centrale di verifica (Zero Trust)
+    // Questo aggiorna anche il timestamp di ultimo accesso (heartbeat)
+    var userCtx = verifySessionAndGetUser(token);
+    
+    // Ricostruiamo l'oggetto utente per il frontend
+    return {
+      success: true,
+      token: token,
+      username: userCtx.username,
+      role: userCtx.ruolo, // Mappa 'ruolo' su 'role' per il frontend
+      nome: userCtx.nome,
+      cognome: userCtx.cognome,
+      istituzioneId: userCtx.istituzioneId
+    };
+  } catch (e) {
+    // Se la sessione è scaduta o invalida, il frontend dovrà fare logout
+    return { success: false, message: e.message };
+  }
+}
+
 // --- LOGIN ---
 
 /**
