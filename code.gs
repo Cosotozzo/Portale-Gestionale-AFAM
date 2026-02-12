@@ -527,7 +527,8 @@ function saveCessazioni(token, payload) {
         message: payload.mode === 'FINAL' 
             ? "Invio completato e protocollato." 
             : "Bozza salvata correttamente.",
-        lastSave: new Date()
+        // Fix Cruciale: Utilities.formatDate converte la data in testo, evitando il crash della risposta
+        lastSave: Utilities.formatDate(new Date(), "Europe/Rome", "dd/MM/yyyy HH:mm:ss")
     };
 
   } catch(e) {
