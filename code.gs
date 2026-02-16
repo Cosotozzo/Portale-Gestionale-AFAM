@@ -64,94 +64,161 @@ function hashPassword(password, salt) {
   return txtHash;
 }
 
-// --- CORE: UTILITY ---
+function generateUUID() { return Utilities.getUuid(); }
+
+// --- CORE: GESTIONE SESSIONE (SICUREZZA) ---
+
 function generateUUID() { return Utilities.getUuid(); }
 
 // --- CORE: GESTIONE SESSIONE (SICUREZZA & PERFORMANCE) ---
 
-/**
- * Ottimizzato per 100+ utenti: usa TextFinder invece di caricare l'intero foglio in memoria.
- */
+// INIZIO MODIFICA
 function verifySessionAndGetUser(token) {
   if (!token) throw new Error("Sessione non valida. Effettua nuovamente il login.");
-  
+
+  // 1. PROVA A LEGGERE DALLA CACHE VELOCE
   var cache = CacheService.getScriptCache();
   var cachedUser = cache.get("SESSION_" + token);
-  if (cachedUser) return JSON.parse(cachedUser);
+  
+  if (cachedUser) {
+    return JSON.parse(cachedUser);
+  }
 
+  // 2. FALLBACK: SE NON IN CACHE, LEGGI IL FOGLIO (LENTO)
   var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
   var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
+  var data = sheetCred.getDataRange().getValues();
   
-  // Ricerca chirurgica del Token nella colonna SESSION_ID (O)
-  var finder = sheetCred.getRange("O:O").createTextFinder(token).matchEntireCell(true);
-  var result = finder.findNext();
-  
-  if (result) {
-    var rowIndex = result.getRow();
-    var rowData = sheetCred.getRange(rowIndex, 1, 1, sheetCred.getLastColumn()).getValues()[0];
-    
-    if (rowData[COL_MAP.CRED.STATO] !== 'ATTIVO') throw new Error("Utenza disabilitata.");
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][COL_MAP.CRED.SESSION_ID]) === token) {
+      if (data[i][COL_MAP.CRED.STATO] !== 'ATTIVO') throw new Error("Utenza disabilitata.");
+      
+      // Update Heartbeat (opzionale: fallo meno spesso per performance, qui lo lasciamo per sicurezza)
+      try { sheetCred.getRange(i + 1, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date()); } catch(e){}
 
-    var userObj = {
-      rowIndex: rowIndex,
-      username: rowData[COL_MAP.CRED.USERNAME],
-      istituzioneId: rowData[COL_MAP.CRED.ISTITUZIONE_ID],
-      ruolo: rowData[COL_MAP.CRED.RUOLO],
-      nome: rowData[COL_MAP.CRED.NOME],
-      cognome: rowData[COL_MAP.CRED.COGNOME]
-    };
-    
-    cache.put("SESSION_" + token, JSON.stringify(userObj), 1200); // Cache 20 min
-    return userObj;
+      var userObj = {
+        rowIndex: i + 1,
+        username: data[i][COL_MAP.CRED.USERNAME],
+        istituzioneId: data[i][COL_MAP.CRED.ISTITUZIONE_ID],
+        ruolo: data[i][COL_MAP.CRED.RUOLO],
+        nome: data[i][COL_MAP.CRED.NOME],
+        cognome: data[i][COL_MAP.CRED.COGNOME]
+      };
+
+      // 3. SALVA IN CACHE PER 20 MINUTI (1200 secondi)
+      // Così le prossime chiamate non leggeranno il foglio
+      cache.put("SESSION_" + token, JSON.stringify(userObj), 1200);
+
+      return userObj;
+    }
   }
   throw new Error("Sessione scaduta o invalida.");
 }
 
+// INIZIO MODIFICA
 /**
- * Login ottimizzato per alta concorrenza.
+ * Tenta di ripristinare la sessione utente dato un token.
+ * Usato dal frontend al refresh (F5) della pagina.
+ */
+function restoreSession(token) {
+  try {
+    // Riutilizziamo la logica centrale di verifica (Zero Trust)
+    // Questo aggiorna anche il timestamp di ultimo accesso (heartbeat)
+    var userCtx = verifySessionAndGetUser(token);
+    
+    // Ricostruiamo l'oggetto utente per il frontend
+    return {
+      success: true,
+      token: token,
+      username: userCtx.username,
+      role: userCtx.ruolo, // Mappa 'ruolo' su 'role' per il frontend
+      nome: userCtx.nome,
+      cognome: userCtx.cognome,
+      istituzioneId: userCtx.istituzioneId
+    };
+  } catch (e) {
+    // Se la sessione è scaduta o invalida, il frontend dovrà fare logout
+    return { success: false, message: e.message };
+  }
+}
+
+// --- LOGIN ---
+
+/**
+ * Gestisce l'autenticazione utente con protezione per accessi simultanei massivi.
+ * @param {Object} formObject Oggetto contenente username e password dal client.
  */
 function doLogin(formObject) {
+  // Acquisizione del Lock a livello di Script per gestire la coda di 100+ utenze
   var lock = LockService.getScriptLock();
+  
   try {
-    lock.waitLock(30000); // Gestione coda 100 utenti
-    
+    // Attende fino a 30 secondi che si liberi il semaforo di scrittura
+    lock.waitLock(30000); 
+    Logger.log("Lock acquisito per login: " + formObject.username);
+
     var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
     var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
+    var data = sheetCred.getDataRange().getValues();
+    
     var usernameInput = String(formObject.username).trim();
-    
-    // Ricerca veloce dell'utente colonna USERNAME (F)
-    var finder = sheetCred.getRange("F:F").createTextFinder(usernameInput).matchEntireCell(true);
-    var result = finder.findNext();
-    
-    if (!result) return { success: false, message: "Utente non trovato." };
-    
-    var rowIndex = result.getRow();
-    var rowData = sheetCred.getRange(rowIndex, 1, 1, sheetCred.getLastColumn()).getValues()[0];
-    
-    if (hashPassword(formObject.password, rowData[COL_MAP.CRED.SALT]) === rowData[COL_MAP.CRED.HASH]) {
-      if (rowData[COL_MAP.CRED.STATO] !== 'ATTIVO') return { success: false, message: "Utenza non attiva." };
+    var passwordInput = formObject.password;
 
-      var newSessionId = generateUUID();
-      sheetCred.getRange(rowIndex, COL_MAP.CRED.SESSION_ID + 1).setValue(newSessionId);
-      sheetCred.getRange(rowIndex, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date());
-      
-      SpreadsheetApp.flush();
-      
-      return {
-        success: true, 
-        token: newSessionId, 
-        username: usernameInput,
-        role: rowData[COL_MAP.CRED.RUOLO],
-        nome: rowData[COL_MAP.CRED.NOME],
-        cognome: rowData[COL_MAP.CRED.COGNOME],
-        istituzioneId: rowData[COL_MAP.CRED.ISTITUZIONE_ID]
-      };
+    // Ricerca dell'utente nel database (Sheet CREDENZIALI)
+    for (var i = 1; i < data.length; i++) {
+      var dbUser = String(data[i][COL_MAP.CRED.USERNAME]).trim();
+
+      if (dbUser === usernameInput) { 
+        var storedHash = data[i][COL_MAP.CRED.HASH];
+        var salt = data[i][COL_MAP.CRED.SALT];
+
+        // Validazione Password (ES6+)
+        if (hashPassword(passwordInput, salt) === storedHash) {
+          
+          // Verifica stato utenza (Zero Trust)
+          if (data[i][COL_MAP.CRED.STATO] !== 'ATTIVO') {
+            return { success: false, message: "Utenza non attiva o in attesa di approvazione." };
+          }
+
+          // Generazione Sessione Atomica
+          var newSessionId = generateUUID();
+          
+          // Scrittura dati sessione e heartbeat
+          // Utilizziamo indici COL_MAP per manutenibilità 
+          sheetCred.getRange(i + 1, COL_MAP.CRED.SESSION_ID + 1).setValue(newSessionId);
+          sheetCred.getRange(i + 1, COL_MAP.CRED.LAST_LOGIN + 1)
+                   .setValue(new Date())
+                   .setNumberFormat("dd/MM/yyyy HH:mm:ss");
+          
+          // Sincronizzazione forzata prima del rilascio del lock
+          SpreadsheetApp.flush();
+          
+          Logger.log("Login completato con successo per: " + dbUser);
+          
+          return {
+            success: true, 
+            token: newSessionId, 
+            username: dbUser,
+            role: data[i][COL_MAP.CRED.RUOLO], 
+            nome: data[i][COL_MAP.CRED.NOME], 
+            cognome: data[i][COL_MAP.CRED.COGNOME], 
+            istituzioneId: data[i][COL_MAP.CRED.ISTITUZIONE_ID]
+          };
+        } else { 
+          return { success: false, message: "Password errata." };
+        }
+      }
     }
-    return { success: false, message: "Password errata." };
+    return { success: false, message: "Utente non trovato." };
 
   } catch (e) {
-    return { success: false, message: "Server sovraccarico, riprova tra poco." };
+    Logger.log("ERRORE CRITICO LOGIN: " + e.message);
+    return { 
+      success: false, 
+      message: "Il server è al momento sovraccarico. Riprova tra pochi istanti." 
+    };
   } finally {
+    // Rilascio fondamentale del lock per permettere l'accesso agli altri utenti in coda
     lock.releaseLock();
   }
 }
@@ -396,77 +463,80 @@ function generateAdminReport() {
 }
 
 /**
- * VERSIONE OTTIMIZZATA (SOLO SALVATAGGIO) - LATE LOCK, EARLY RELEASE
+ * VERSIONE OTTIMIZZATA (SOLO SALVATAGGIO)
  * Gestisce l'alta concorrenza (100+ utenti) usando TextFinder e Upsert.
- * Rimuove il collo di bottiglia spostando i calcoli CPU fuori dalla coda di blocco.
+ * Rimuove il collo di bottiglia dell'Export (spostato alla notte).
  */
 function saveCessazioni(token, payload) {
-// INIZIO MODIFICA
-  // 1. Verifica Sicurezza & Elaborazione Payload (FUORI DAL LOCK, NESSUNA CODA)
-  const userCtx = verifySessionAndGetUser(token);
-  const idIstituzione = String(userCtx.istituzioneId);
-  const usernameReale = userCtx.username;
-
-  // 2. Validazione Logica Zero-Trust (FUORI DAL LOCK)
-  if (payload.mode === 'FINAL') {
-    const hasUnvalidated = payload.rows.some(r => !r.azione);
-    if (hasUnvalidated) throw new Error("Devi validare tutte le righe prima di inviare.");
-    
-    const hasMissingNotes = payload.rows.some(r => r.azione === 'MODIFICA' && (!r.note || r.note.trim() === ""));
-    if (hasMissingNotes) throw new Error("Nota obbligatoria per le modifiche.");
-  }
-
-  // 3. Preparazione Dati (FUORI DAL LOCK)
-  const nuovoStato = (payload.mode === 'FINAL') ? 'INVIATO' : 'BOZZA';
-  const dataOperazione = new Date();
-  const jsonString = JSON.stringify({ 
-      rows: payload.rows, 
-      flag: payload.richiestaNuovaFinestra === true 
-  });
-
-  // -----------------------------------------------------------------
-  // 4. SEZIONE CRITICA: ACQUISIZIONE LOCK SOLO PER LA SCRITTURA I/O
-  // -----------------------------------------------------------------
-  const lock = LockService.getScriptLock();
-  try { 
-    lock.waitLock(30000); 
-  } catch (e) {
-    return { success: false, message: "Server in intenso traffico. Riprova tra 10 secondi." };
+  var lock = LockService.getScriptLock();
+  // Timeout esteso a 30s per gestire le code nei momenti di picco
+  try { lock.waitLock(30000); } catch (e) {
+    return { success: false, message: "Server intenso traffico. Riprova tra 10 secondi." };
   }
 
   try {
-    const ssCess = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
-    const sheetResp = ssCess.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
+    // 1. Verifica Sicurezza
+    var userCtx = verifySessionAndGetUser(token);
+    var idIstituzione = String(userCtx.istituzioneId);
+    var usernameReale = userCtx.username;
+
+    var ssCess = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
+    var sheetResp = ssCess.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
     
-    // RICERCA VELOCE (TextFinder)
-    const finder = sheetResp.getRange("B:B").createTextFinder(idIstituzione).matchEntireCell(true);
-    const result = finder.findNext();
+    // 2. Validazione Logica (Solo se invio definitivo)
+    if(payload.mode === 'FINAL') {
+      for(var j=0; j<payload.rows.length; j++) {
+        if(!payload.rows[j].azione) throw new Error("Devi validare tutte le righe prima di inviare.");
+        if(payload.rows[j].azione === 'MODIFICA' && (!payload.rows[j].note || payload.rows[j].note.trim() === "")) {
+             throw new Error("Nota obbligatoria per le modifiche.");
+        }
+      }
+    }
+    
+    // 3. Preparazione Dati
+    var nuovoStato = (payload.mode === 'FINAL') ? 'INVIATO' : 'BOZZA';
+    var dataOperazione = new Date();
+    // Prepariamo il pacchetto JSON (Rows + Flag Nuova Finestra)
+    var fullDataToStore = {
+      rows: payload.rows,
+      flag: payload.richiestaNuovaFinestra === true
+    };
+    var jsonString = JSON.stringify(fullDataToStore);
+    
+    // 4. RICERCA VELOCE (TextFinder)
+    // Cerca l'ID Istituzione nella Colonna B (Indice 2) senza caricare tutti i dati
+    var finder = sheetResp.getRange("B:B").createTextFinder(idIstituzione).matchEntireCell(true);
+    var result = finder.findNext();
     
     if (result) {
       // --> CASO AGGIORNAMENTO (Upsert)
-      const rowIndex = result.getRow();
+      var rowIndex = result.getRow();
+      // Scrive solo nelle colonne: Stato(C), Data(D), Utente(E), JSON(F)
       sheetResp.getRange(rowIndex, 3, 1, 4).setValues([[nuovoStato, dataOperazione, usernameReale, jsonString]]);
     } else {
       // --> CASO NUOVO INSERIMENTO
-      sheetResp.appendRow([Utilities.getUuid(), idIstituzione, nuovoStato, dataOperazione, usernameReale, jsonString]);
+      var idRisposta = Utilities.getUuid();
+      sheetResp.appendRow([idRisposta, idIstituzione, nuovoStato, dataOperazione, usernameReale, jsonString]);
     }
     
-    // Scrittura immediata prima di rilasciare il blocco
+    // Scrittura immediata
     SpreadsheetApp.flush();
     
     return { 
         success: true, 
-        message: payload.mode === 'FINAL' ? "Invio completato e protocollato." : "Bozza salvata correttamente.",
+        message: payload.mode === 'FINAL' 
+            ? "Invio completato e protocollato." 
+            : "Bozza salvata correttamente.",
+        // Fix Cruciale: Utilities.formatDate converte la data in testo, evitando il crash della risposta
         lastSave: Utilities.formatDate(new Date(), "Europe/Rome", "dd/MM/yyyy HH:mm:ss")
     };
+
   } catch(e) {
     Logger.log("Errore Save: " + e.message);
     return { success: false, message: "Errore salvataggio: " + e.message };
   } finally {
-    // 5. RILASCIO IMMEDIATO DEL BLOCCO
     lock.releaseLock();
   }
-// FINE MODIFICA
 }
 
 // --- UTILS REGISTRAZIONE & ADMIN ---
@@ -635,86 +705,62 @@ function registerUser(formObject) {
 }
 
 function resetPasswordByData(formObj) {
-  const lock = LockService.getScriptLock();
   try {
-    // Attesa lock per gestire la concorrenza (max 10 secondi)
-    lock.waitLock(10000); 
-
     var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
     var sheetIst = ss.getSheetByName(DB_CONFIG.SHEET_ISTITUZIONI);
     var dataIst = sheetIst.getDataRange().getValues();
     var targetIdIst = null;
     var searchName = String(formObj.institutionName).trim().toLowerCase();
-
     for (var i = 1; i < dataIst.length; i++) { 
-        if (String(dataIst[i][1]).trim().toLowerCase() === searchName) { 
-            targetIdIst = dataIst[i][0]; 
-            break; 
-        } 
+        if (String(dataIst[i][1]).trim().toLowerCase() === searchName) { targetIdIst = dataIst[i][0]; break; } 
     }
     if (!targetIdIst) return { success: false, message: "Istituzione non trovata." };
 
     var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
-    var searchCF = String(formObj.cf).toUpperCase().trim();
-    
-    // Ricerca rapida con TextFinder
-    var finder = sheetCred.getRange("B:B").createTextFinder(searchCF).matchEntireCell(true);
-    var result = finder.findNext();
-    
-    if (!result) return { success: false, message: "Dati utente non trovati." };
-    
-    var rowIndex = result.getRow();
-    var rowData = sheetCred.getRange(rowIndex, 1, 1, sheetCred.getLastColumn()).getValues()[0];
-
-    // Validazione Zero Trust
-    if (String(rowData[COL_MAP.CRED.ISTITUZIONE_ID]) !== String(targetIdIst) || 
-        String(rowData[COL_MAP.CRED.USERNAME]).trim() !== String(formObj.username).trim()) {
-        return { success: false, message: "Dati di verifica non corrispondenti." };
+    var dataCred = sheetCred.getDataRange().getValues();
+    var userRowIndex = -1;
+    for (var i = 1; i < dataCred.length; i++) {
+      if (String(dataCred[i][COL_MAP.CRED.CF]).toUpperCase() === String(formObj.cf).toUpperCase().trim() && 
+          String(dataCred[i][COL_MAP.CRED.ISTITUZIONE_ID]) === String(targetIdIst) && 
+          String(dataCred[i][COL_MAP.CRED.USERNAME]) == String(formObj.username).trim()) { 
+          var storedPin = String(dataCred[i][COL_MAP.CRED.PIN]).trim().toUpperCase();
+          var inputPin = String(formObj.pin).trim().toUpperCase();
+          if(storedPin !== inputPin) { return { success: false, message: "PIN di sicurezza errato." }; }
+          userRowIndex = i + 1; break;
+      }
     }
+    if (userRowIndex === -1) return { success: false, message: "Dati utente non trovati." };
     
-    var storedPin = String(rowData[COL_MAP.CRED.PIN]).trim().toUpperCase();
-    var inputPin = String(formObj.pin).trim().toUpperCase();
-    if(storedPin !== inputPin) return { success: false, message: "PIN di sicurezza errato." };
-    
-    // Generazione nuove credenziali
     var newSalt = generateUUID();
     var newHash = hashPassword(formObj.newPassword, newSalt);
-
-    // Scrittura atomica (HASH e SALT sono contigui: colonne 7 e 8)
-    sheetCred.getRange(rowIndex, COL_MAP.CRED.HASH + 1, 1, 2).setValues([[newHash, newSalt]]);
-    
-    // Sincronizzazione forzata prima del rilascio lock
-    SpreadsheetApp.flush();
-
+    sheetCred.getRange(userRowIndex, COL_MAP.CRED.HASH + 1).setValue(newHash);
+    sheetCred.getRange(userRowIndex, COL_MAP.CRED.SALT + 1).setValue(newSalt);
     return { success: true, message: "Password aggiornata con successo." };
-
-  } catch(e) { 
-    return { success: false, message: "Errore: " + e.toString() }; 
-  } finally {
-    lock.releaseLock(); // Rilascio fondamentale del lock
-  }
+  } catch(e) { return { success: false, message: "Errore: " + e.toString() }; }
 }
 
 function logoutUser(token) {
   try {
+    // 1. RIMUOVI DALLA CACHE (Operazione Veloce)
+    // È fondamentale usare la stessa chiave usata nel login ("SESSION_" + token)
     var cache = CacheService.getScriptCache();
     cache.remove("SESSION_" + token); 
 
+    // 2. RIMUOVI DAL DB (Operazione Lenta ma Persistente)
     var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
     var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
+    var data = sheetCred.getDataRange().getValues();
     
-    // INIZIO MODIFICA: Ricerca rapida del token
-    var finder = sheetCred.getRange("O:O").createTextFinder(token).matchEntireCell(true);
-    var result = finder.findNext();
-    
-    if (result) {
-      // Cancella solo la cella specifica del Session ID
-      result.setValue("");
-      return true;
+    for (var i = 1; i < data.length; i++) {
+      // Cerca la riga corrispondente al token
+      if (String(data[i][COL_MAP.CRED.SESSION_ID]) === token) {
+        // Cancella il token dalla cella
+        sheetCred.getRange(i + 1, COL_MAP.CRED.SESSION_ID + 1).setValue("");
+        return true;
+      }
     }
-    // FINE MODIFICA
-    return false;
   } catch(e) {
+    // Log dell'errore ma non blocchiamo l'utente
     Logger.log("Errore durante logout: " + e.message);
     return false;
   }

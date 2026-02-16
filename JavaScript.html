@@ -102,46 +102,31 @@
     return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
-function toggleLoading(show, message = "Elaborazione in corso...") {
+  function toggleLoading(show) {
     const el = document.getElementById('loading');
-    if(!el) return;
-    const textEl = el.querySelector('.fw-bold');
+    if(el) { if (show) el.classList.remove('hidden'); else el.classList.add('hidden'); }
+  }
 
-    if (show) {
-        if(textEl) textEl.innerText = message;
-        el.classList.remove('hidden');
-    } else {
-        el.classList.add('hidden');
-        // Reset del testo dopo che lo spinner è scomparso
-        setTimeout(() => { 
-            if(textEl) textEl.innerText = "Elaborazione in corso..."; 
-        }, 300);
-    }
-}
+  function showToast(message, type = 'info') {
+    const toastEl = document.getElementById('liveToast');
+    const toastBody = document.getElementById('toast-message');
+    if(!toastEl) return alert(message);
+    
+    toastEl.classList.remove('bg-danger', 'bg-success', 'bg-primary', 'bg-warning', 'text-dark');
+    if (type === 'error') toastEl.classList.add('bg-danger');
+    else if (type === 'success') toastEl.classList.add('bg-success');
+    else if (type === 'warning') { toastEl.classList.add('bg-warning'); toastEl.classList.add('text-dark'); }
+    else { toastEl.classList.add('bg-primary'); }
+    
+    toastBody.innerText = message;
+    const toast = new bootstrap.Toast(toastEl);
+    toast.show();
+  }
 
-  function showToast(message, type = 'success') {
-      const toastEl = document.getElementById('liveToast');
-      const msgEl = document.getElementById('toast-message');
-      if (!toastEl || !msgEl) return;
-      
-      // Reset classi di base
-      toastEl.className = 'toast align-items-center text-white border-0 shadow-lg';
-      
-      // Assegnazione colori in base al tipo
-      if (type === 'success') {
-          toastEl.classList.add('bg-success');
-      } else if (type === 'error') {
-          toastEl.classList.add('bg-danger');
-      } else if (type === 'warning') {
-          toastEl.classList.add('bg-warning', 'text-dark');
-          toastEl.classList.remove('text-white');
-      } else {
-          toastEl.classList.add('bg-primary');
-      }
-      
-      msgEl.innerText = message;
-      const toast = new bootstrap.Toast(toastEl, { delay: 4000 });
-      toast.show();
+  function handleServerError(err) {
+      toggleLoading(false);
+      console.error(err);
+      showToast("Errore: " + err.message, 'error');
   }
 
   function updateUserInterface(user) {
@@ -449,7 +434,6 @@ function submitRegistration() {
                 showToast(res.message, 'error'); 
             } 
         })
-        .withFailureHandler(handleServerError)
         .registerUser(payload);
   }
 
@@ -655,34 +639,52 @@ function saveCessazioniAction(mode) {
           richiestaNuovaFinestra: reqNew 
       };
 
-      // 3. UI LOADING (Uso diretto del nuovo parametro di toggleLoading)
-      const msg = (mode === 'FINAL') 
-            ? "Salvataggio in corso... Attendere il caricamento." 
-            : "Salvataggio bozza...";
+      // 3. UI LOADING (Feedback immediato)
+      toggleLoading(true);
+      let loadingTextEl = document.querySelector('#loading .fw-bold');
+      // Salviamo il testo originale
+      const originalText = "Elaborazione in corso...";
       
-      toggleLoading(true, msg);
+      if(loadingTextEl) {
+          loadingTextEl.innerText = (mode === 'FINAL') 
+            ? "Salvataggio in corso... Attendere il ricaricamento." 
+            : "Salvataggio bozza...";
+      }
 
-      // 4. CHIAMATA AL SERVER
+      // 4. CHIAMATA AL SERVER (Senza ritardi artificiali)
       google.script.run
         .withSuccessHandler(res => {
+            // Se siamo qui, il server ha risposto! Niente più timeout.
+            
             if (res.success) {
                 showToast(res.message, 'success');
                 
                 if (mode === 'FINAL') {
                     // --- IL TRUCCO "RICARICA INTELLIGENTE" ---
+                    // Il dato è salvato. Ora lanciamo subito la lettura per aggiornare la vista.
+                    // Non serve ricaricare la pagina browser (F5), basta richiamare la funzione dati.
                     loadCessazioniData(); 
+                    
+                    // Nota: Non togliamo il loading qui, ci penserà loadCessazioniData a gestirlo
                 } else {
-                    // Bozza: chiudi semplicemente lo spinner
+                    // Se è bozza, finito qui
                     toggleLoading(false);
+                    if(loadingTextEl) loadingTextEl.innerText = originalText;
                 }
             } else {
+                // Errore logico (es. dati non validi)
                 toggleLoading(false);
+                if(loadingTextEl) loadingTextEl.innerText = originalText;
                 showToast("Errore dal server: " + res.message, 'error');
             }
         })
         .withFailureHandler(err => {
+            // Se siamo qui, c'è un vero problema di rete o crash
             toggleLoading(false);
+            if(loadingTextEl) loadingTextEl.innerText = originalText;
             console.error("Errore salvataggio:", err);
+            
+            // Messaggio utile per l'utente
             showToast("Errore di comunicazione. Verifica se i dati sono stati salvati ricaricando la pagina.", 'error');
         })
         .saveCessazioni(currentUser.token, payload);
