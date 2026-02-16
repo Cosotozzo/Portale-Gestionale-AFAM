@@ -470,66 +470,80 @@ function generateAdminReport() {
  * Rimuove il collo di bottiglia dell'Export (spostato alla notte).
  */
 function saveCessazioni(token, payload) {
+  const tStart = new Date().getTime(); 
+  
   try {
-    // 1. Verifica Sicurezza (FUORI DAL LOCK)
-    var userCtx = verifySessionAndGetUser(token);
-    var idIstituzione = String(userCtx.istituzioneId);
-    var usernameReale = userCtx.username;
-
-    // 2. Validazione Logica (FUORI DAL LOCK)
-    if(payload.mode === 'FINAL') {
-      for(var j=0; j<payload.rows.length; j++) {
-        if(!payload.rows[j].azione) throw new Error("Devi validare tutte le righe prima di inviare.");
-        if(payload.rows[j].azione === 'MODIFICA' && (!payload.rows[j].note || payload.rows[j].note.trim() === "")) {
-             throw new Error("Nota obbligatoria per le modifiche.");
-        }
-      }
-    }
+    // 1. VALIDAZIONE ZERO TRUST (Eseguita fuori dalla sezione critica)
+    const userCtx = verifySessionAndGetUser(token);
+    const idIstituzione = String(userCtx.istituzioneId);
     
-    // 3. Preparazione Dati (FUORI DAL LOCK)
-    var nuovoStato = (payload.mode === 'FINAL') ? 'INVIATO' : 'BOZZA';
-    var dataOperazione = new Date();
-    var fullDataToStore = {
-      rows: payload.rows,
+    if (!payload || !payload.rows || !Array.isArray(payload.rows)) {
+      throw new Error("Formato dati non valido.");
+    }
+
+    // Sanitizzazione e validazione profonda del payload
+    const cleanRows = payload.rows.map(row => {
+      // Regola di business: Note obbligatorie per MODIFICA
+      if (payload.mode === 'FINAL' && row.azione === 'MODIFICA' && (!row.note || row.note.trim().length < 3)) {
+        throw new Error(`Errore validazione: Inserire una nota valida per il CF ${row.cf}.`);
+      }
+      
+      return {
+        idCessazione: String(row.idCessazione || "").trim(),
+        cf: String(row.cf || "").toUpperCase().trim(),
+        azione: row.azione ? String(row.azione).trim() : null,
+        note: row.note ? String(row.note).trim() : ""
+      };
+    });
+
+    const nuovoStato = (payload.mode === 'FINAL') ? 'INVIATO' : 'BOZZA';
+    const dataOperazione = new Date();
+    const dataBlob = {
+      rows: cleanRows,
       flag: payload.richiestaNuovaFinestra === true
     };
-    var jsonString = JSON.stringify(fullDataToStore);
+    const jsonString = JSON.stringify(dataBlob);
 
-    // 4. Sezione Critica (LOCK)
-    var lock = LockService.getScriptLock();
-    try { 
-        lock.waitLock(15000); // 15 secondi bastano per una singola scrittura 
-        
-        var ssCess = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
-        var sheetResp = ssCess.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
-        
-        var finder = sheetResp.getRange("B:B").createTextFinder(idIstituzione).matchEntireCell(true);
-        var result = finder.findNext();
-        
-        if (result) {
-          var rowIndex = result.getRow();
-          sheetResp.getRange(rowIndex, 3, 1, 4).setValues([[nuovoStato, dataOperazione, usernameReale, jsonString]]);
-        } else {
-          var idRisposta = Utilities.getUuid();
-          sheetResp.appendRow([idRisposta, idIstituzione, nuovoStato, dataOperazione, usernameReale, jsonString]);
-        }
-        SpreadsheetApp.flush();
+    // 2. SEZIONE CRITICA (LOCKING OTTIMIZZATO)
+    const lock = LockService.getScriptLock();
+    const hasLock = lock.tryLock(30000); // Timeout 30s per gestire code massive
+    
+    if (!hasLock) throw new Error("Il server è momentaneamente occupato. Riprovare tra qualche secondo.");
+    
+    try {
+      const ss = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
+      const sheetResp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
+      
+      // Lookup O(1) con TextFinder per minimizzare il tempo di lock
+      const finder = sheetResp.getRange("B:B").createTextFinder(idIstituzione).matchEntireCell(true);
+      const result = finder.findNext();
+      
+      if (result) {
+        // Update riga esistente: Col 3 (Stato), 4 (Data), 5 (Utente), 6 (JSON)
+        const rowIdx = result.getRow();
+        sheetResp.getRange(rowIdx, 3, 1, 4).setValues([[nuovoStato, dataOperazione, userCtx.username, jsonString]]);
+      } else {
+        // Insert nuova riga
+        const newId = Utilities.getUuid();
+        sheetResp.appendRow([newId, idIstituzione, nuovoStato, dataOperazione, userCtx.username, jsonString]);
+      }
+      
+      SpreadsheetApp.flush();
+      Logger.log(`[AUDIT] Save Success | User: ${userCtx.username} | Mode: ${payload.mode} | Time: ${new Date().getTime() - tStart}ms`);
+      
     } finally {
-        lock.releaseLock();
+      lock.releaseLock();
     }
-
+    
     return { 
-        success: true, 
-        message: payload.mode === 'FINAL' ? "Invio completato e protocollato." : "Bozza salvata correttamente.",
-        lastSave: Utilities.formatDate(dataOperazione, "Europe/Rome", "dd/MM/yyyy HH:mm:ss")
+      success: true, 
+      message: (payload.mode === 'FINAL') ? "Invio completato e protocollato." : "Bozza salvata correttamente.",
+      lastSave: Utilities.formatDate(dataOperazione, "Europe/Rome", "dd/MM/yyyy HH:mm:ss")
     };
 
-  } catch(e) {
-    Logger.log("Errore Save: " + e.message);
-    if(e.message.includes("lock")) {
-         return { success: false, message: "Server intenso traffico. Riprova tra pochi secondi." };
-    }
-    return { success: false, message: "Errore salvataggio: " + e.message };
+  } catch (e) {
+    Logger.log(`[ERROR] Save Failed | Reason: ${e.message}`);
+    return { success: false, message: e.message };
   }
 }
 

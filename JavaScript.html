@@ -282,35 +282,43 @@
 
 // --- PASSWORD VALIDATION LOGIC ---
 // INIZIO MODIFICA
-  function setupPasswordValidation() {
+function setupPasswordValidation() {
       const p1 = document.getElementById('reg-pass');
       const p2 = document.getElementById('reg-pass-conf');
       
-      // Funzione interna di validazione
+      // Regex Complexity: 8+ caratteri, 1 Maiuscola, 1 Numero, 1 Speciale
+      const REGEX_STRONG = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
       window.isPasswordValid = () => {
-          if(!p1 || !p2) return false;
-          const v1 = p1.value || "";
-          const v2 = p2.value || "";
+          if(!p1 ||!p2) return false;
+          const v1 = p1.value |
 
-          // Regole
+| "";
+          const v2 = p2.value |
+
+| "";
+
+          // Check atomici per UI
           const checkLen = v1.length >= 8;
-          const checkSpec = /[!@#$%^&*(),.?":{}|<>]/.test(v1); // Caratteri speciali
-          const checkNum = /\d/.test(v1); // Almeno un numero
+          const checkSpec = /[!@#$%^&*(),.?":{}|<>]/.test(v1); 
+          const checkNum = /\d/.test(v1); 
           const checkMatch = (v1 === v2) && v1.length > 0;
+          
+          // Check Globale
+          const isStrong = REGEX_STRONG.test(v1);
 
-          // Aggiorna UI
           updateRequirementUI('req-len', checkLen);
           updateRequirementUI('req-spec', checkSpec);
           updateRequirementUI('req-num', checkNum);
           updateRequirementUI('req-match', checkMatch);
 
-          return checkLen && checkSpec && checkNum && checkMatch;
+          return checkLen && checkSpec && checkNum && checkMatch && isStrong;
       };
 
-      // Listener attivi durante la digitazione
       if(p1 && p2) {
-          p1.addEventListener('input', window.isPasswordValid);
-          p2.addEventListener('input', window.isPasswordValid);
+          // Usa 'keyup' per feedback immediato durante la digitazione
+          p1.addEventListener('keyup', window.isPasswordValid);
+          p2.addEventListener('keyup', window.isPasswordValid);
       }
   }
 
