@@ -119,10 +119,29 @@ function toggleLoading(show, message = "Elaborazione in corso...") {
     }
 }
 
-  function handleServerError(err) {
-      toggleLoading(false);
-      console.error(err);
-      showToast("Errore: " + err.message, 'error');
+  function showToast(message, type = 'success') {
+      const toastEl = document.getElementById('liveToast');
+      const msgEl = document.getElementById('toast-message');
+      if (!toastEl || !msgEl) return;
+      
+      // Reset classi di base
+      toastEl.className = 'toast align-items-center text-white border-0 shadow-lg';
+      
+      // Assegnazione colori in base al tipo
+      if (type === 'success') {
+          toastEl.classList.add('bg-success');
+      } else if (type === 'error') {
+          toastEl.classList.add('bg-danger');
+      } else if (type === 'warning') {
+          toastEl.classList.add('bg-warning', 'text-dark');
+          toastEl.classList.remove('text-white');
+      } else {
+          toastEl.classList.add('bg-primary');
+      }
+      
+      msgEl.innerText = message;
+      const toast = new bootstrap.Toast(toastEl, { delay: 4000 });
+      toast.show();
   }
 
   function updateUserInterface(user) {
@@ -430,6 +449,7 @@ function submitRegistration() {
                 showToast(res.message, 'error'); 
             } 
         })
+        .withFailureHandler(handleServerError)
         .registerUser(payload);
   }
 
