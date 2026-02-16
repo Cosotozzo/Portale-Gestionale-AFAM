@@ -102,26 +102,22 @@
     return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
-  function toggleLoading(show) {
+function toggleLoading(show, message = "Elaborazione in corso...") {
     const el = document.getElementById('loading');
-    if(el) { if (show) el.classList.remove('hidden'); else el.classList.add('hidden'); }
-  }
+    if(!el) return;
+    const textEl = el.querySelector('.fw-bold');
 
-  function showToast(message, type = 'info') {
-    const toastEl = document.getElementById('liveToast');
-    const toastBody = document.getElementById('toast-message');
-    if(!toastEl) return alert(message);
-    
-    toastEl.classList.remove('bg-danger', 'bg-success', 'bg-primary', 'bg-warning', 'text-dark');
-    if (type === 'error') toastEl.classList.add('bg-danger');
-    else if (type === 'success') toastEl.classList.add('bg-success');
-    else if (type === 'warning') { toastEl.classList.add('bg-warning'); toastEl.classList.add('text-dark'); }
-    else { toastEl.classList.add('bg-primary'); }
-    
-    toastBody.innerText = message;
-    const toast = new bootstrap.Toast(toastEl);
-    toast.show();
-  }
+    if (show) {
+        if(textEl) textEl.innerText = message;
+        el.classList.remove('hidden');
+    } else {
+        el.classList.add('hidden');
+        // Reset del testo dopo che lo spinner è scomparso
+        setTimeout(() => { 
+            if(textEl) textEl.innerText = "Elaborazione in corso..."; 
+        }, 300);
+    }
+}
 
   function handleServerError(err) {
       toggleLoading(false);

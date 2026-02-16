@@ -64,161 +64,94 @@ function hashPassword(password, salt) {
   return txtHash;
 }
 
-function generateUUID() { return Utilities.getUuid(); }
-
-// --- CORE: GESTIONE SESSIONE (SICUREZZA) ---
-
+// --- CORE: UTILITY ---
 function generateUUID() { return Utilities.getUuid(); }
 
 // --- CORE: GESTIONE SESSIONE (SICUREZZA & PERFORMANCE) ---
 
-// INIZIO MODIFICA
+/**
+ * Ottimizzato per 100+ utenti: usa TextFinder invece di caricare l'intero foglio in memoria.
+ */
 function verifySessionAndGetUser(token) {
   if (!token) throw new Error("Sessione non valida. Effettua nuovamente il login.");
-
-  // 1. PROVA A LEGGERE DALLA CACHE VELOCE
+  
   var cache = CacheService.getScriptCache();
   var cachedUser = cache.get("SESSION_" + token);
-  
-  if (cachedUser) {
-    return JSON.parse(cachedUser);
-  }
+  if (cachedUser) return JSON.parse(cachedUser);
 
-  // 2. FALLBACK: SE NON IN CACHE, LEGGI IL FOGLIO (LENTO)
   var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
   var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
-  var data = sheetCred.getDataRange().getValues();
   
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][COL_MAP.CRED.SESSION_ID]) === token) {
-      if (data[i][COL_MAP.CRED.STATO] !== 'ATTIVO') throw new Error("Utenza disabilitata.");
-      
-      // Update Heartbeat (opzionale: fallo meno spesso per performance, qui lo lasciamo per sicurezza)
-      try { sheetCred.getRange(i + 1, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date()); } catch(e){}
+  // Ricerca chirurgica del Token nella colonna SESSION_ID (O)
+  var finder = sheetCred.getRange("O:O").createTextFinder(token).matchEntireCell(true);
+  var result = finder.findNext();
+  
+  if (result) {
+    var rowIndex = result.getRow();
+    var rowData = sheetCred.getRange(rowIndex, 1, 1, sheetCred.getLastColumn()).getValues()[0];
+    
+    if (rowData[COL_MAP.CRED.STATO] !== 'ATTIVO') throw new Error("Utenza disabilitata.");
 
-      var userObj = {
-        rowIndex: i + 1,
-        username: data[i][COL_MAP.CRED.USERNAME],
-        istituzioneId: data[i][COL_MAP.CRED.ISTITUZIONE_ID],
-        ruolo: data[i][COL_MAP.CRED.RUOLO],
-        nome: data[i][COL_MAP.CRED.NOME],
-        cognome: data[i][COL_MAP.CRED.COGNOME]
-      };
-
-      // 3. SALVA IN CACHE PER 20 MINUTI (1200 secondi)
-      // Così le prossime chiamate non leggeranno il foglio
-      cache.put("SESSION_" + token, JSON.stringify(userObj), 1200);
-
-      return userObj;
-    }
+    var userObj = {
+      rowIndex: rowIndex,
+      username: rowData[COL_MAP.CRED.USERNAME],
+      istituzioneId: rowData[COL_MAP.CRED.ISTITUZIONE_ID],
+      ruolo: rowData[COL_MAP.CRED.RUOLO],
+      nome: rowData[COL_MAP.CRED.NOME],
+      cognome: rowData[COL_MAP.CRED.COGNOME]
+    };
+    
+    cache.put("SESSION_" + token, JSON.stringify(userObj), 1200); // Cache 20 min
+    return userObj;
   }
   throw new Error("Sessione scaduta o invalida.");
 }
 
-// INIZIO MODIFICA
 /**
- * Tenta di ripristinare la sessione utente dato un token.
- * Usato dal frontend al refresh (F5) della pagina.
- */
-function restoreSession(token) {
-  try {
-    // Riutilizziamo la logica centrale di verifica (Zero Trust)
-    // Questo aggiorna anche il timestamp di ultimo accesso (heartbeat)
-    var userCtx = verifySessionAndGetUser(token);
-    
-    // Ricostruiamo l'oggetto utente per il frontend
-    return {
-      success: true,
-      token: token,
-      username: userCtx.username,
-      role: userCtx.ruolo, // Mappa 'ruolo' su 'role' per il frontend
-      nome: userCtx.nome,
-      cognome: userCtx.cognome,
-      istituzioneId: userCtx.istituzioneId
-    };
-  } catch (e) {
-    // Se la sessione è scaduta o invalida, il frontend dovrà fare logout
-    return { success: false, message: e.message };
-  }
-}
-
-// --- LOGIN ---
-
-/**
- * Gestisce l'autenticazione utente con protezione per accessi simultanei massivi.
- * @param {Object} formObject Oggetto contenente username e password dal client.
+ * Login ottimizzato per alta concorrenza.
  */
 function doLogin(formObject) {
-  // Acquisizione del Lock a livello di Script per gestire la coda di 100+ utenze
   var lock = LockService.getScriptLock();
-  
   try {
-    // Attende fino a 30 secondi che si liberi il semaforo di scrittura
-    lock.waitLock(30000); 
-    Logger.log("Lock acquisito per login: " + formObject.username);
-
+    lock.waitLock(30000); // Gestione coda 100 utenti
+    
     var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
     var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
-    var data = sheetCred.getDataRange().getValues();
-    
     var usernameInput = String(formObject.username).trim();
-    var passwordInput = formObject.password;
+    
+    // Ricerca veloce dell'utente colonna USERNAME (F)
+    var finder = sheetCred.getRange("F:F").createTextFinder(usernameInput).matchEntireCell(true);
+    var result = finder.findNext();
+    
+    if (!result) return { success: false, message: "Utente non trovato." };
+    
+    var rowIndex = result.getRow();
+    var rowData = sheetCred.getRange(rowIndex, 1, 1, sheetCred.getLastColumn()).getValues()[0];
+    
+    if (hashPassword(formObject.password, rowData[COL_MAP.CRED.SALT]) === rowData[COL_MAP.CRED.HASH]) {
+      if (rowData[COL_MAP.CRED.STATO] !== 'ATTIVO') return { success: false, message: "Utenza non attiva." };
 
-    // Ricerca dell'utente nel database (Sheet CREDENZIALI)
-    for (var i = 1; i < data.length; i++) {
-      var dbUser = String(data[i][COL_MAP.CRED.USERNAME]).trim();
-
-      if (dbUser === usernameInput) { 
-        var storedHash = data[i][COL_MAP.CRED.HASH];
-        var salt = data[i][COL_MAP.CRED.SALT];
-
-        // Validazione Password (ES6+)
-        if (hashPassword(passwordInput, salt) === storedHash) {
-          
-          // Verifica stato utenza (Zero Trust)
-          if (data[i][COL_MAP.CRED.STATO] !== 'ATTIVO') {
-            return { success: false, message: "Utenza non attiva o in attesa di approvazione." };
-          }
-
-          // Generazione Sessione Atomica
-          var newSessionId = generateUUID();
-          
-          // Scrittura dati sessione e heartbeat
-          // Utilizziamo indici COL_MAP per manutenibilità 
-          sheetCred.getRange(i + 1, COL_MAP.CRED.SESSION_ID + 1).setValue(newSessionId);
-          sheetCred.getRange(i + 1, COL_MAP.CRED.LAST_LOGIN + 1)
-                   .setValue(new Date())
-                   .setNumberFormat("dd/MM/yyyy HH:mm:ss");
-          
-          // Sincronizzazione forzata prima del rilascio del lock
-          SpreadsheetApp.flush();
-          
-          Logger.log("Login completato con successo per: " + dbUser);
-          
-          return {
-            success: true, 
-            token: newSessionId, 
-            username: dbUser,
-            role: data[i][COL_MAP.CRED.RUOLO], 
-            nome: data[i][COL_MAP.CRED.NOME], 
-            cognome: data[i][COL_MAP.CRED.COGNOME], 
-            istituzioneId: data[i][COL_MAP.CRED.ISTITUZIONE_ID]
-          };
-        } else { 
-          return { success: false, message: "Password errata." };
-        }
-      }
+      var newSessionId = generateUUID();
+      sheetCred.getRange(rowIndex, COL_MAP.CRED.SESSION_ID + 1).setValue(newSessionId);
+      sheetCred.getRange(rowIndex, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date());
+      
+      SpreadsheetApp.flush();
+      
+      return {
+        success: true, 
+        token: newSessionId, 
+        username: usernameInput,
+        role: rowData[COL_MAP.CRED.RUOLO],
+        nome: rowData[COL_MAP.CRED.NOME],
+        cognome: rowData[COL_MAP.CRED.COGNOME],
+        istituzioneId: rowData[COL_MAP.CRED.ISTITUZIONE_ID]
+      };
     }
-    return { success: false, message: "Utente non trovato." };
+    return { success: false, message: "Password errata." };
 
   } catch (e) {
-    Logger.log("ERRORE CRITICO LOGIN: " + e.message);
-    return { 
-      success: false, 
-      message: "Il server è al momento sovraccarico. Riprova tra pochi istanti." 
-    };
+    return { success: false, message: "Server sovraccarico, riprova tra poco." };
   } finally {
-    // Rilascio fondamentale del lock per permettere l'accesso agli altri utenti in coda
     lock.releaseLock();
   }
 }
@@ -705,62 +638,86 @@ function registerUser(formObject) {
 }
 
 function resetPasswordByData(formObj) {
+  const lock = LockService.getScriptLock();
   try {
+    // Attesa lock per gestire la concorrenza (max 10 secondi)
+    lock.waitLock(10000); 
+
     var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
     var sheetIst = ss.getSheetByName(DB_CONFIG.SHEET_ISTITUZIONI);
     var dataIst = sheetIst.getDataRange().getValues();
     var targetIdIst = null;
     var searchName = String(formObj.institutionName).trim().toLowerCase();
+
     for (var i = 1; i < dataIst.length; i++) { 
-        if (String(dataIst[i][1]).trim().toLowerCase() === searchName) { targetIdIst = dataIst[i][0]; break; } 
+        if (String(dataIst[i][1]).trim().toLowerCase() === searchName) { 
+            targetIdIst = dataIst[i][0]; 
+            break; 
+        } 
     }
     if (!targetIdIst) return { success: false, message: "Istituzione non trovata." };
 
     var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
-    var dataCred = sheetCred.getDataRange().getValues();
-    var userRowIndex = -1;
-    for (var i = 1; i < dataCred.length; i++) {
-      if (String(dataCred[i][COL_MAP.CRED.CF]).toUpperCase() === String(formObj.cf).toUpperCase().trim() && 
-          String(dataCred[i][COL_MAP.CRED.ISTITUZIONE_ID]) === String(targetIdIst) && 
-          String(dataCred[i][COL_MAP.CRED.USERNAME]) == String(formObj.username).trim()) { 
-          var storedPin = String(dataCred[i][COL_MAP.CRED.PIN]).trim().toUpperCase();
-          var inputPin = String(formObj.pin).trim().toUpperCase();
-          if(storedPin !== inputPin) { return { success: false, message: "PIN di sicurezza errato." }; }
-          userRowIndex = i + 1; break;
-      }
-    }
-    if (userRowIndex === -1) return { success: false, message: "Dati utente non trovati." };
+    var searchCF = String(formObj.cf).toUpperCase().trim();
     
+    // Ricerca rapida con TextFinder
+    var finder = sheetCred.getRange("B:B").createTextFinder(searchCF).matchEntireCell(true);
+    var result = finder.findNext();
+    
+    if (!result) return { success: false, message: "Dati utente non trovati." };
+    
+    var rowIndex = result.getRow();
+    var rowData = sheetCred.getRange(rowIndex, 1, 1, sheetCred.getLastColumn()).getValues()[0];
+
+    // Validazione Zero Trust
+    if (String(rowData[COL_MAP.CRED.ISTITUZIONE_ID]) !== String(targetIdIst) || 
+        String(rowData[COL_MAP.CRED.USERNAME]).trim() !== String(formObj.username).trim()) {
+        return { success: false, message: "Dati di verifica non corrispondenti." };
+    }
+    
+    var storedPin = String(rowData[COL_MAP.CRED.PIN]).trim().toUpperCase();
+    var inputPin = String(formObj.pin).trim().toUpperCase();
+    if(storedPin !== inputPin) return { success: false, message: "PIN di sicurezza errato." };
+    
+    // Generazione nuove credenziali
     var newSalt = generateUUID();
     var newHash = hashPassword(formObj.newPassword, newSalt);
-    sheetCred.getRange(userRowIndex, COL_MAP.CRED.HASH + 1).setValue(newHash);
-    sheetCred.getRange(userRowIndex, COL_MAP.CRED.SALT + 1).setValue(newSalt);
+
+    // Scrittura atomica (HASH e SALT sono contigui: colonne 7 e 8)
+    sheetCred.getRange(rowIndex, COL_MAP.CRED.HASH + 1, 1, 2).setValues([[newHash, newSalt]]);
+    
+    // Sincronizzazione forzata prima del rilascio lock
+    SpreadsheetApp.flush();
+
     return { success: true, message: "Password aggiornata con successo." };
-  } catch(e) { return { success: false, message: "Errore: " + e.toString() }; }
+
+  } catch(e) { 
+    return { success: false, message: "Errore: " + e.toString() }; 
+  } finally {
+    lock.releaseLock(); // Rilascio fondamentale del lock
+  }
 }
 
 function logoutUser(token) {
   try {
-    // 1. RIMUOVI DALLA CACHE (Operazione Veloce)
-    // È fondamentale usare la stessa chiave usata nel login ("SESSION_" + token)
     var cache = CacheService.getScriptCache();
     cache.remove("SESSION_" + token); 
 
-    // 2. RIMUOVI DAL DB (Operazione Lenta ma Persistente)
     var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
     var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
-    var data = sheetCred.getDataRange().getValues();
     
-    for (var i = 1; i < data.length; i++) {
-      // Cerca la riga corrispondente al token
-      if (String(data[i][COL_MAP.CRED.SESSION_ID]) === token) {
-        // Cancella il token dalla cella
-        sheetCred.getRange(i + 1, COL_MAP.CRED.SESSION_ID + 1).setValue("");
-        return true;
-      }
+    // INIZIO MODIFICA: Ricerca rapida del token
+    var finder = sheetCred.getRange("O:O").createTextFinder(token).matchEntireCell(true);
+    var result = finder.findNext();
+    
+    if (result) {
+      // Cancella solo la cella specifica del Session ID
+      result.setValue("");
+      return true;
     }
+    // FINE MODIFICA
+    return false;
   } catch(e) {
-    // Log dell'errore ma non blocchiamo l'utente
     Logger.log("Errore durante logout: " + e.message);
     return false;
   }
