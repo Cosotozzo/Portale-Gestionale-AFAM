@@ -635,52 +635,34 @@ function saveCessazioniAction(mode) {
           richiestaNuovaFinestra: reqNew 
       };
 
-      // 3. UI LOADING (Feedback immediato)
-      toggleLoading(true);
-      let loadingTextEl = document.querySelector('#loading .fw-bold');
-      // Salviamo il testo originale
-      const originalText = "Elaborazione in corso...";
-      
-      if(loadingTextEl) {
-          loadingTextEl.innerText = (mode === 'FINAL') 
+      // 3. UI LOADING (Uso diretto del nuovo parametro di toggleLoading)
+      const msg = (mode === 'FINAL') 
             ? "Salvataggio in corso... Attendere il caricamento." 
             : "Salvataggio bozza...";
-      }
+      
+      toggleLoading(true, msg);
 
-      // 4. CHIAMATA AL SERVER (Senza ritardi artificiali)
+      // 4. CHIAMATA AL SERVER
       google.script.run
         .withSuccessHandler(res => {
-            // Se siamo qui, il server ha risposto! Niente più timeout.
-            
             if (res.success) {
                 showToast(res.message, 'success');
                 
                 if (mode === 'FINAL') {
                     // --- IL TRUCCO "RICARICA INTELLIGENTE" ---
-                    // Il dato è salvato. Ora lanciamo subito la lettura per aggiornare la vista.
-                    // Non serve ricaricare la pagina browser (F5), basta richiamare la funzione dati.
                     loadCessazioniData(); 
-                    
-                    // Nota: Non togliamo il loading qui, ci penserà loadCessazioniData a gestirlo
                 } else {
-                    // Se è bozza, finito qui
+                    // Bozza: chiudi semplicemente lo spinner
                     toggleLoading(false);
-                    if(loadingTextEl) loadingTextEl.innerText = originalText;
                 }
             } else {
-                // Errore logico (es. dati non validi)
                 toggleLoading(false);
-                if(loadingTextEl) loadingTextEl.innerText = originalText;
                 showToast("Errore dal server: " + res.message, 'error');
             }
         })
         .withFailureHandler(err => {
-            // Se siamo qui, c'è un vero problema di rete o crash
             toggleLoading(false);
-            if(loadingTextEl) loadingTextEl.innerText = originalText;
             console.error("Errore salvataggio:", err);
-            
-            // Messaggio utile per l'utente
             showToast("Errore di comunicazione. Verifica se i dati sono stati salvati ricaricando la pagina.", 'error');
         })
         .saveCessazioni(currentUser.token, payload);
