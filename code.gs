@@ -396,80 +396,77 @@ function generateAdminReport() {
 }
 
 /**
- * VERSIONE OTTIMIZZATA (SOLO SALVATAGGIO)
+ * VERSIONE OTTIMIZZATA (SOLO SALVATAGGIO) - LATE LOCK, EARLY RELEASE
  * Gestisce l'alta concorrenza (100+ utenti) usando TextFinder e Upsert.
- * Rimuove il collo di bottiglia dell'Export (spostato alla notte).
+ * Rimuove il collo di bottiglia spostando i calcoli CPU fuori dalla coda di blocco.
  */
 function saveCessazioni(token, payload) {
-  var lock = LockService.getScriptLock();
-  // Timeout esteso a 30s per gestire le code nei momenti di picco
-  try { lock.waitLock(30000); } catch (e) {
-    return { success: false, message: "Server intenso traffico. Riprova tra 10 secondi." };
+// INIZIO MODIFICA
+  // 1. Verifica Sicurezza & Elaborazione Payload (FUORI DAL LOCK, NESSUNA CODA)
+  const userCtx = verifySessionAndGetUser(token);
+  const idIstituzione = String(userCtx.istituzioneId);
+  const usernameReale = userCtx.username;
+
+  // 2. Validazione Logica Zero-Trust (FUORI DAL LOCK)
+  if (payload.mode === 'FINAL') {
+    const hasUnvalidated = payload.rows.some(r => !r.azione);
+    if (hasUnvalidated) throw new Error("Devi validare tutte le righe prima di inviare.");
+    
+    const hasMissingNotes = payload.rows.some(r => r.azione === 'MODIFICA' && (!r.note || r.note.trim() === ""));
+    if (hasMissingNotes) throw new Error("Nota obbligatoria per le modifiche.");
+  }
+
+  // 3. Preparazione Dati (FUORI DAL LOCK)
+  const nuovoStato = (payload.mode === 'FINAL') ? 'INVIATO' : 'BOZZA';
+  const dataOperazione = new Date();
+  const jsonString = JSON.stringify({ 
+      rows: payload.rows, 
+      flag: payload.richiestaNuovaFinestra === true 
+  });
+
+  // -----------------------------------------------------------------
+  // 4. SEZIONE CRITICA: ACQUISIZIONE LOCK SOLO PER LA SCRITTURA I/O
+  // -----------------------------------------------------------------
+  const lock = LockService.getScriptLock();
+  try { 
+    lock.waitLock(30000); 
+  } catch (e) {
+    return { success: false, message: "Server in intenso traffico. Riprova tra 10 secondi." };
   }
 
   try {
-    // 1. Verifica Sicurezza
-    var userCtx = verifySessionAndGetUser(token);
-    var idIstituzione = String(userCtx.istituzioneId);
-    var usernameReale = userCtx.username;
-
-    var ssCess = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
-    var sheetResp = ssCess.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
+    const ssCess = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
+    const sheetResp = ssCess.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
     
-    // 2. Validazione Logica (Solo se invio definitivo)
-    if(payload.mode === 'FINAL') {
-      for(var j=0; j<payload.rows.length; j++) {
-        if(!payload.rows[j].azione) throw new Error("Devi validare tutte le righe prima di inviare.");
-        if(payload.rows[j].azione === 'MODIFICA' && (!payload.rows[j].note || payload.rows[j].note.trim() === "")) {
-             throw new Error("Nota obbligatoria per le modifiche.");
-        }
-      }
-    }
-    
-    // 3. Preparazione Dati
-    var nuovoStato = (payload.mode === 'FINAL') ? 'INVIATO' : 'BOZZA';
-    var dataOperazione = new Date();
-    // Prepariamo il pacchetto JSON (Rows + Flag Nuova Finestra)
-    var fullDataToStore = {
-      rows: payload.rows,
-      flag: payload.richiestaNuovaFinestra === true
-    };
-    var jsonString = JSON.stringify(fullDataToStore);
-    
-    // 4. RICERCA VELOCE (TextFinder)
-    // Cerca l'ID Istituzione nella Colonna B (Indice 2) senza caricare tutti i dati
-    var finder = sheetResp.getRange("B:B").createTextFinder(idIstituzione).matchEntireCell(true);
-    var result = finder.findNext();
+    // RICERCA VELOCE (TextFinder)
+    const finder = sheetResp.getRange("B:B").createTextFinder(idIstituzione).matchEntireCell(true);
+    const result = finder.findNext();
     
     if (result) {
       // --> CASO AGGIORNAMENTO (Upsert)
-      var rowIndex = result.getRow();
-      // Scrive solo nelle colonne: Stato(C), Data(D), Utente(E), JSON(F)
+      const rowIndex = result.getRow();
       sheetResp.getRange(rowIndex, 3, 1, 4).setValues([[nuovoStato, dataOperazione, usernameReale, jsonString]]);
     } else {
       // --> CASO NUOVO INSERIMENTO
-      var idRisposta = Utilities.getUuid();
-      sheetResp.appendRow([idRisposta, idIstituzione, nuovoStato, dataOperazione, usernameReale, jsonString]);
+      sheetResp.appendRow([Utilities.getUuid(), idIstituzione, nuovoStato, dataOperazione, usernameReale, jsonString]);
     }
     
-    // Scrittura immediata
+    // Scrittura immediata prima di rilasciare il blocco
     SpreadsheetApp.flush();
     
     return { 
         success: true, 
-        message: payload.mode === 'FINAL' 
-            ? "Invio completato e protocollato." 
-            : "Bozza salvata correttamente.",
-        // Fix Cruciale: Utilities.formatDate converte la data in testo, evitando il crash della risposta
+        message: payload.mode === 'FINAL' ? "Invio completato e protocollato." : "Bozza salvata correttamente.",
         lastSave: Utilities.formatDate(new Date(), "Europe/Rome", "dd/MM/yyyy HH:mm:ss")
     };
-
   } catch(e) {
     Logger.log("Errore Save: " + e.message);
     return { success: false, message: "Errore salvataggio: " + e.message };
   } finally {
+    // 5. RILASCIO IMMEDIATO DEL BLOCCO
     lock.releaseLock();
   }
+// FINE MODIFICA
 }
 
 // --- UTILS REGISTRAZIONE & ADMIN ---
