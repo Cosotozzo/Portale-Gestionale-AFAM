@@ -289,14 +289,10 @@ function setupPasswordValidation() {
       // Regex Complexity: 8+ caratteri, 1 Maiuscola, 1 Numero, 1 Speciale
       const REGEX_STRONG = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
-      window.isPasswordValid = () => {
+          window.isPasswordValid = () => {
           if(!p1 ||!p2) return false;
-          const v1 = p1.value |
-
-| "";
-          const v2 = p2.value |
-
-| "";
+          const v1 = p1.value || "";
+          const v2 = p2.value || "";
 
           // Check atomici per UI
           const checkLen = v1.length >= 8;
@@ -655,7 +651,7 @@ function saveCessazioniAction(mode) {
       
       if(loadingTextEl) {
           loadingTextEl.innerText = (mode === 'FINAL') 
-            ? "Salvataggio in corso... Attendere il ricaricamento." 
+            ? "Salvataggio in corso... Attendere il caricamento." 
             : "Salvataggio bozza...";
       }
 
