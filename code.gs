@@ -695,8 +695,17 @@ function registerUser(formObject) {
 
     var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
     var dataCred = sheetCred.getDataRange().getValues();
+    var inputEmail = String(formObject.email).trim().toLowerCase();
+
     for (var i = 1; i < dataCred.length; i++) { 
-        if (String(dataCred[i][COL_MAP.CRED.CF]).toUpperCase() === userWhitelist.cf) return { success: false, message: "Utente già registrato." }; 
+        // Controllo 1: Codice Fiscale già presente
+        if (String(dataCred[i][COL_MAP.CRED.CF]).toUpperCase() === userWhitelist.cf) {
+            return { success: false, message: "Utente (Codice Fiscale) già registrato." }; 
+        }
+        // Controllo 2: Email già presente
+        if (String(dataCred[i][COL_MAP.CRED.USERNAME]).trim().toLowerCase() === inputEmail) {
+            return { success: false, message: "Indirizzo email già presente nel sistema. Usa un'altra email o recupera la password." }; 
+        }
     }
     
     var salt = generateUUID();
