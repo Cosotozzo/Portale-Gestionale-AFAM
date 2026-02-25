@@ -580,8 +580,7 @@ function submitRegistration() {
             <tr class="${rowClass}">
               <td class="fw-bold text-nowrap">${escapeHtml(row.cognome)} ${escapeHtml(row.nome)}</td>
               <td>${escapeHtml(row.cf)}</td>
-              <td>${escapeHtml(row.dataNascita)}</td>
-              <td>${escapeHtml(row.eta)}</td>
+              <td>${escapeHtml(row.qualifica)}</td>
               <td class="text-center">
                   <div class="btn-group shadow-sm">
                     <button class="btn btn-sm ${isAppr?'btn-success':'btn-outline-success'}" onclick="act(${idx}, 'APPROVA')" ${cessazioniReadOnly?'disabled':''} title="Approva"><i class="fas fa-check"></i></button>

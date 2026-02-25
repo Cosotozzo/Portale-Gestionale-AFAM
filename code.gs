@@ -24,7 +24,7 @@ var COL_MAP = {
     HASH: 6, SALT: 7, RUOLO: 8, PIN: 9, STATO: 11, SESSION_ID: 14, LAST_LOGIN: 15
   },
   ANAG_CESS: {
-    ID_CESSAZIONE: 0, ID_ISTITUZIONE: 1, NOME: 3, COGNOME: 4, CF: 5, DATA_NASCITA: 6
+    ID_CESSAZIONE: 0, ID_ISTITUZIONE: 1, NOME: 3, COGNOME: 4, CF: 5, QUALIFICA: 6
   }
 };
 
@@ -280,18 +280,16 @@ var cache = CacheService.getScriptCache();
         for(var i=1; i<dataAnag.length; i++) {
           if(!dataAnag[i][0]) continue;
           if(String(dataAnag[i][COL_MAP.ANAG_CESS.ID_ISTITUZIONE]).trim() === idIstituzione) {
-            var eta = "N/D";
-            var dataNascitaRaw = dataAnag[i][COL_MAP.ANAG_CESS.DATA_NASCITA];
-            var dataNascitaStr = formatDateSafe(dataNascitaRaw); 
-            try { if (dataNascitaRaw instanceof Date) eta = currentYear - dataNascitaRaw.getFullYear(); } catch(e) {}
+            var qualificaRaw = dataAnag[i][COL_MAP.ANAG_CESS.QUALIFICA];
+            var qualificaStr = qualificaRaw ? String(qualificaRaw).trim() : "N/D"; 
 
             listaSoggetti.push({
               idCessazione: String(dataAnag[i][COL_MAP.ANAG_CESS.ID_CESSAZIONE]),
               cf: String(dataAnag[i][COL_MAP.ANAG_CESS.CF]).toUpperCase().trim(),
               nome: String(dataAnag[i][COL_MAP.ANAG_CESS.NOME]),
               cognome: String(dataAnag[i][COL_MAP.ANAG_CESS.COGNOME]),
-              dataNascita: dataNascitaStr,
-              eta: eta, azione: null, note: ""
+              qualifica: qualificaStr,
+              azione: null, note: ""
             });
           }
         }
