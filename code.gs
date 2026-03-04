@@ -181,7 +181,7 @@ function doLogin(formObject) {
 
       if (hashPassword(passwordInput, salt) === storedHash) {
         if (targetUser[COL_MAP.CRED.STATO] !== 'ATTIVO') {
-          return { success: false, message: "Utenza in attesa di approvazione." };
+          return { success: false, message: "Utenza in attesa di approvazione d parte del Ministero." };
         }
       } else { 
         return { success: false, message: "Password errata." };
