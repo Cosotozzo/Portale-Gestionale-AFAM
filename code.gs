@@ -733,32 +733,67 @@ function resetPasswordByData(formObj) {
     var dataIst = sheetIst.getDataRange().getValues();
     var targetIdIst = null;
     var searchName = String(formObj.institutionName).trim().toLowerCase();
+    
+    // 1. Ricerca ID Istituzione
     for (var i = 1; i < dataIst.length; i++) { 
-        if (String(dataIst[i][1]).trim().toLowerCase() === searchName) { targetIdIst = dataIst[i][0]; break; } 
+        if (String(dataIst[i][1]).trim().toLowerCase() === searchName) { 
+            targetIdIst = dataIst[i][0];
+            break; 
+        } 
     }
+    
     if (!targetIdIst) return { success: false, message: "Istituzione non trovata." };
 
+    // --- INIZIO MODIFICA: Logica di ricerca utente ottimizzata e Zero Trust ---
     var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
     var dataCred = sheetCred.getDataRange().getValues();
     var userRowIndex = -1;
+    
+    // Normalizzazione preventiva degli input utente
+    var inputUsernameSearch = String(formObj.username).trim().toLowerCase();
+    var inputCfSearch = String(formObj.cf).trim().toUpperCase();
+    var inputTargetIdIst = String(targetIdIst).trim();
+    var inputPin = String(formObj.pin).trim().toUpperCase();
+
+    // 2. Ricerca utente nel DB Credenziali
     for (var i = 1; i < dataCred.length; i++) {
-      if (String(dataCred[i][COL_MAP.CRED.CF]).toUpperCase() === String(formObj.cf).toUpperCase().trim() && 
-          String(dataCred[i][COL_MAP.CRED.ISTITUZIONE_ID]) === String(targetIdIst) && 
-          String(dataCred[i][COL_MAP.CRED.USERNAME]) == String(formObj.username).trim()) { 
-          var storedPin = String(dataCred[i][COL_MAP.CRED.PIN]).trim().toUpperCase();
-          var inputPin = String(formObj.pin).trim().toUpperCase();
-          if(storedPin !== inputPin) { return { success: false, message: "PIN di sicurezza errato." }; }
-          userRowIndex = i + 1; break;
+      var row = dataCred[i];
+      
+      // Estrazione e normalizzazione dei dati riga per riga
+      var dbCf = String(row[COL_MAP.CRED.CF]).trim().toUpperCase();
+      var dbIdIst = String(row[COL_MAP.CRED.ISTITUZIONE_ID]).trim();
+      var dbUsername = String(row[COL_MAP.CRED.USERNAME]).trim().toLowerCase();
+      
+      // Matching di Sicurezza
+      if (dbCf === inputCfSearch && dbIdIst === inputTargetIdIst && dbUsername === inputUsernameSearch) { 
+          
+          var storedPin = String(row[COL_MAP.CRED.PIN]).trim().toUpperCase();
+          if (storedPin !== inputPin) { 
+            return { success: false, message: "PIN di sicurezza errato." }; 
+          }
+          
+          userRowIndex = i + 1; 
+          break;
       }
     }
-    if (userRowIndex === -1) return { success: false, message: "Dati utente non trovati." };
+    // --- FINE MODIFICA ---
+
+    // 3. Verifica esito e reset password
+    if (userRowIndex === -1) {
+        return { success: false, message: "Dati utente non trovati." };
+    }
     
     var newSalt = generateUUID();
     var newHash = hashPassword(formObj.newPassword, newSalt);
+    
     sheetCred.getRange(userRowIndex, COL_MAP.CRED.HASH + 1).setValue(newHash);
     sheetCred.getRange(userRowIndex, COL_MAP.CRED.SALT + 1).setValue(newSalt);
+    
     return { success: true, message: "Password aggiornata con successo." };
-  } catch(e) { return { success: false, message: "Errore: " + e.toString() }; }
+    
+  } catch(e) { 
+    return { success: false, message: "Errore: " + e.toString() };
+  }
 }
 
 function logoutUser(token) {
