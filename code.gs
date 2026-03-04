@@ -31,7 +31,14 @@ var COL_MAP = {
 // --- FUNZIONI DI SISTEMA E UTILITY ---
 
 function doGet() {
-  return HtmlService.createTemplateFromFile('Index')
+  const now = new Date();
+  // Anno, Mese (0-based: 2 = Marzo), Giorno, Ore, Minuti, Secondi
+  const launchDate = new Date(2026, 2, 3, 8, 0, 0); 
+  
+  // Se la data attuale è minore del lancio, carica il Countdown, altrimenti l'Index normale.
+  const templateFile = (now < launchDate) ? 'Countdown' : 'Index';
+
+  return HtmlService.createTemplateFromFile(templateFile)
     .evaluate()
     .setTitle('Portale Gestione AFAM - MUR')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -174,7 +181,7 @@ function doLogin(formObject) {
 
       if (hashPassword(passwordInput, salt) === storedHash) {
         if (targetUser[COL_MAP.CRED.STATO] !== 'ATTIVO') {
-          return { success: false, message: "Utenza non attiva o in attesa di approvazione." };
+          return { success: false, message: "Utenza in attesa di approvazione." };
         }
       } else { 
         return { success: false, message: "Password errata." };
