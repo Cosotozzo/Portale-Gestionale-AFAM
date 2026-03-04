@@ -512,6 +512,26 @@ function submitRegistration() {
       const tbody = document.getElementById('tbody-admin-report');
       tbody.innerHTML = '';
 
+      let stats = { totale: 0, inviato: 0, bozza: 0, noncompilato: 0 };
+      
+      if (data && data.length > 0) {
+          stats.totale = data.length;
+          data.forEach(row => {
+              if (row.stato === 'INVIATO') stats.inviato++;
+              else if (row.stato === 'BOZZA') stats.bozza++;
+              else stats.noncompilato++;
+          });
+      }
+      
+      const elTotale = document.getElementById('admin-stat-total');
+      if (elTotale) elTotale.innerText = stats.totale;
+      const elInviato = document.getElementById('admin-stat-inviato');
+      if (elInviato) elInviato.innerText = stats.inviato;
+      const elBozza = document.getElementById('admin-stat-bozza');
+      if (elBozza) elBozza.innerText = stats.bozza;
+      const elNonCompilato = document.getElementById('admin-stat-noncompilato');
+      if (elNonCompilato) elNonCompilato.innerText = stats.noncompilato;
+
       if (!data || data.length === 0) {
           tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4">Nessun dato trovato.</td></tr>';
           return;

@@ -786,8 +786,17 @@ function resetPasswordByData(formObj) {
     var newSalt = generateUUID();
     var newHash = hashPassword(formObj.newPassword, newSalt);
     
-    sheetCred.getRange(userRowIndex, COL_MAP.CRED.HASH + 1).setValue(newHash);
-    sheetCred.getRange(userRowIndex, COL_MAP.CRED.SALT + 1).setValue(newSalt);
+    var lock = LockService.getScriptLock();
+    try {
+        lock.waitLock(10000); // Attesa max 10 secondi
+        
+        sheetCred.getRange(userRowIndex, COL_MAP.CRED.HASH + 1).setValue(newHash);
+        sheetCred.getRange(userRowIndex, COL_MAP.CRED.SALT + 1).setValue(newSalt);
+        
+        SpreadsheetApp.flush(); // Forza l'applicazione immediata delle scritture
+    } finally {
+        lock.releaseLock(); // Rilascio garantito
+    }
     
     return { success: true, message: "Password aggiornata con successo." };
     
