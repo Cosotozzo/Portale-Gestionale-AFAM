@@ -839,48 +839,52 @@ function logoutUser(token) {
  */
 function syncExportTable() {
   var lock = LockService.getScriptLock();
-  // Se il processo è già in corso (improbabile di notte), usciamo subito
-  try { lock.waitLock(5000); } catch(e) { return; } 
+  try { 
+    lock.waitLock(5000);
+  } catch(e) { return; } 
   
   try {
     var ss = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
     var sheetResp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
     var sheetExp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_EXP);
+    var scriptProps = PropertiesService.getScriptProperties();
     
     if(!sheetResp || !sheetExp) {
       Logger.log("Fogli non trovati per syncExportTable");
       return;
     }
 
-    // 1. Lettura massiva di tutte le risposte
+    // 1. Recupero Watermark (Timestamp dell'ultima sincronizzazione corretta)
+    var lastRunStr = scriptProps.getProperty('LAST_EXPORT_SYNC');
+    var lastRunTime = lastRunStr ? parseInt(lastRunStr, 10) : 0; // Se è la prima volta, prende tutto (0)
+    var currentRunTime = new Date().getTime();
+
+    // 2. Lettura massiva delle risposte
     var dataResp = sheetResp.getDataRange().getValues();
     var exportRows = [];
     
-    // 2. Elaborazione dati (Parsing JSON)
-    // Parte da i=1 per saltare l'intestazione
+    // Elaborazione dati (Parsing JSON)
     for (var i = 1; i < dataResp.length; i++) {
-      var idIst = dataResp[i][1];     // Colonna B
-      var stato = dataResp[i][2];     // Colonna C
-      var rawJson = dataResp[i][5];   // Colonna F
+      var idIst = dataResp[i][1]; // Colonna B
+      var stato = dataResp[i][2]; // Colonna C
+      var dataInvio = new Date(dataResp[i][3]).getTime(); // Colonna D (Timestamp invio istituzione)
+      var rawJson = dataResp[i][5]; // Colonna F
       
-      // Elaboriamo SOLO le pratiche INVIATO (ignoriamo le BOZZE)
-      if (stato === 'INVIATO' && rawJson && rawJson !== "") {
+      // Filtro DELTA: Solo INVIATO, con JSON valido e Data Invio > Ultima esecuzione script
+      if (stato === 'INVIATO' && rawJson && dataInvio > lastRunTime) {
         try {
           var parsed = JSON.parse(rawJson);
-          
-          // Compatibilità: gestisce sia il vecchio formato array [] sia il nuovo oggetto {rows, flag}
           var rows = Array.isArray(parsed) ? parsed : (parsed.rows || []);
           var flagNuova = (parsed.flag === true) ? "SI" : "NO";
           
-          // Creiamo una riga export per ogni soggetto nella cessazione
           rows.forEach(function(r) {
             exportRows.push([
-              idIst,           // ID Istituzione
-              r.cf,            // Codice Fiscale
-              r.azione,        // Azione (APPROVA/RIFIUTA/ECC)
-              r.note || "",    // Note
+              idIst,           
+              r.cf,            
+              r.azione,        
+              r.note || "",    
               new Date(),      // Data di questo export
-              flagNuova        // Richiesta nuova finestra (SI/NO)
+              flagNuova        
             ]);
           });
         } catch(e) {
@@ -889,17 +893,20 @@ function syncExportTable() {
       }
     }
     
-    // 3. Scrittura Massiva (Cancella e Riscrivi)
-    sheetExp.clearContents();
-    // Reinseriamo l'intestazione
-    sheetExp.appendRow(["ID_ISTITUZIONE", "CF", "AZIONE", "NOTE", "DATA_EXPORT", "RICHIESTA_NUOVA_FINESTRA"]);
-    
+    // 3. Scrittura Incrementale (Append senza cancellare il pregresso)
     if (exportRows.length > 0) {
-      // Scrive tutte le righe in un colpo solo
-      sheetExp.getRange(2, 1, exportRows.length, 6).setValues(exportRows);
+      // Troviamo l'ultima riga valorizzata, assicurandoci di non sovrascrivere gli header
+      var lastRow = Math.max(sheetExp.getLastRow(), 1); 
+      
+      // Inserimento massivo in un'unica chiamata (Performance ottimizzata)
+      sheetExp.getRange(lastRow + 1, 1, exportRows.length, 6).setValues(exportRows);
+      Logger.log("Export Incrementale completato: " + exportRows.length + " nuove righe accodate.");
+    } else {
+      Logger.log("Export Incrementale: Nessun nuovo dato inserito dalle istituzioni.");
     }
-    
-    Logger.log("Export completato: " + exportRows.length + " righe generate.");
+
+    // 4. Salva il nuovo Watermark per l'esecuzione del giorno successivo
+    scriptProps.setProperty('LAST_EXPORT_SYNC', currentRunTime.toString());
     
   } catch(e) {
     Logger.log("Errore Critico SyncExport: " + e.toString());
