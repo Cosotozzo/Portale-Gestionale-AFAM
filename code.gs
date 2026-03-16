@@ -847,43 +847,37 @@ function syncExportTable() {
     var ss = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
     var sheetResp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
     var sheetExp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_EXP);
-    var scriptProps = PropertiesService.getScriptProperties();
     
     if(!sheetResp || !sheetExp) {
       Logger.log("Fogli non trovati per syncExportTable");
       return;
     }
 
-    // 1. Recupero Watermark (Timestamp dell'ultima sincronizzazione corretta)
-    var lastRunStr = scriptProps.getProperty('LAST_EXPORT_SYNC');
-    var lastRunTime = lastRunStr ? parseInt(lastRunStr, 10) : 0; // Se è la prima volta, prende tutto (0)
-    var currentRunTime = new Date().getTime();
-
-    // 2. Lettura massiva delle risposte
+    // 1. Lettura massiva delle risposte
     var dataResp = sheetResp.getDataRange().getValues();
     var exportRows = [];
-    
+    var dataExport = new Date();
+
     // Elaborazione dati (Parsing JSON)
     for (var i = 1; i < dataResp.length; i++) {
       var idIst = dataResp[i][1]; // Colonna B
       var stato = dataResp[i][2]; // Colonna C
-      var dataInvio = new Date(dataResp[i][3]).getTime(); // Colonna D (Timestamp invio istituzione)
       var rawJson = dataResp[i][5]; // Colonna F
       
-      // Filtro DELTA: Solo INVIATO, con JSON valido e Data Invio > Ultima esecuzione script
-      if (stato === 'INVIATO' && rawJson && dataInvio > lastRunTime) {
+      // Filtro: Estrae SOLO i moduli in stato INVIATO
+      if (stato === 'INVIATO' && rawJson) {
         try {
           var parsed = JSON.parse(rawJson);
           var rows = Array.isArray(parsed) ? parsed : (parsed.rows || []);
           var flagNuova = (parsed.flag === true) ? "SI" : "NO";
-          
+
           rows.forEach(function(r) {
             exportRows.push([
               idIst,           
               r.cf,            
               r.azione,        
               r.note || "",    
-              new Date(),      // Data di questo export
+              dataExport,      // Timestamp univoco di questa sincronizzazione
               flagNuova        
             ]);
           });
@@ -893,21 +887,23 @@ function syncExportTable() {
       }
     }
     
-    // 3. Scrittura Incrementale (Append senza cancellare il pregresso)
-    if (exportRows.length > 0) {
-      // Troviamo l'ultima riga valorizzata, assicurandoci di non sovrascrivere gli header
-      var lastRow = Math.max(sheetExp.getLastRow(), 1); 
-      
-      // Inserimento massivo in un'unica chiamata (Performance ottimizzata)
-      sheetExp.getRange(lastRow + 1, 1, exportRows.length, 6).setValues(exportRows);
-      Logger.log("Export Incrementale completato: " + exportRows.length + " nuove righe accodate.");
-    } else {
-      Logger.log("Export Incrementale: Nessun nuovo dato inserito dalle istituzioni.");
+    // 2. Pulizia tabella Export (Drop dei dati vecchi, preservando la riga di intestazione)
+    var lastRowExp = Math.max(sheetExp.getLastRow(), 1);
+    if (lastRowExp > 1) {
+      // Pulisce rigorosamente tutte le righe sotto l'intestazione
+      sheetExp.getRange(2, 1, lastRowExp - 1, sheetExp.getLastColumn()).clearContent();
     }
 
-    // 4. Salva il nuovo Watermark per l'esecuzione del giorno successivo
-    scriptProps.setProperty('LAST_EXPORT_SYNC', currentRunTime.toString());
-    
+    // 3. Scrittura Massiva (Full Refresh) in una singola transazione O(1)
+    if (exportRows.length > 0) {
+      sheetExp.getRange(2, 1, exportRows.length, exportRows[0].length).setValues(exportRows);
+      Logger.log("Export Full Refresh completato: " + exportRows.length + " righe scritte coerentemente.");
+    } else {
+      Logger.log("Export Full Refresh: Nessun dato valido trovato per l'export.");
+    }
+
+    // Eliminata la logica fallace del Watermark (PropertiesService)
+
   } catch(e) {
     Logger.log("Errore Critico SyncExport: " + e.toString());
   } finally {
