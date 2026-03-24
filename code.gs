@@ -11,6 +11,7 @@ var DB_CONFIG = {
   "SHEET_ISTITUZIONI": "ISTITUZIONI",
   "SHEET_ANAGRAFICA": "ANAGRAFICA_UTENTI",
   "SHEET_CREDENZIALI": "CREDENZIALI_ACCESSO",
+  "SHEET_FINESTRE": "FINESTRE_TEMPORALI",
   "ID_CESSAZIONI": scriptProperties.getProperty('ID_CESSAZIONI'),
   "SHEET_CESSAZIONI_ANAG": "ANAGRAFICA_CESSAZIONI",
   "SHEET_CESSAZIONI_RESP": "RISPOSTE_ISTITUZIONI",
@@ -25,6 +26,9 @@ var COL_MAP = {
   },
   ANAG_CESS: {
     ID_CESSAZIONE: 0, ID_ISTITUZIONE: 1, NOME: 3, COGNOME: 4, CF: 5, QUALIFICA: 6
+  },
+  FINESTRE: {
+    ID: 0, MODULO: 1, TIPO: 2, ID_IST: 3, NOME_IST: 4, INIZIO: 5, FINE: 6, STATO: 7, ADMIN: 8
   }
 };
 
@@ -911,11 +915,83 @@ function syncExportTable() {
   }
 }
 
-/**
- * FUNZIONE DI TEST SINCRONIZZAZIONE
- * Questo è un commento per verificare che Gemini legga l'ultima versione.
- */
-function testSincronizzazioneGemini() {
-  Logger.log("Sincronizzazione completata con successo!");
-  return "Il collegamento GitHub-Gemini funziona!";
+// --- GESTIONE FINESTRE TEMPORALI (SOLO ADMIN) ---
+function fetchFinestre(token) {
+  try {
+    var userCtx = verifySessionAndGetUser(token);
+    if (String(userCtx.ruolo).toUpperCase() !== 'ADMIN') throw new Error("Accesso negato.");
+
+    var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+    var sheet = ss.getSheetByName(DB_CONFIG.SHEET_FINESTRE);
+    if (!sheet) return { success: true, finestre: [] }; // Se il foglio non esiste ancora
+
+    var data = sheet.getDataRange().getValues();
+    var finestre = [];
+    for (var i = 1; i < data.length; i++) {
+        finestre.push({
+            id: data[i][COL_MAP.FINESTRE.ID],
+            modulo: data[i][COL_MAP.FINESTRE.MODULO],
+            tipo: data[i][COL_MAP.FINESTRE.TIPO],
+            nomeIst: data[i][COL_MAP.FINESTRE.NOME_IST],
+            inizio: formatDateSafe(data[i][COL_MAP.FINESTRE.INIZIO]),
+            fine: formatDateSafe(data[i][COL_MAP.FINESTRE.FINE]),
+            stato: data[i][COL_MAP.FINESTRE.STATO]
+        });
+    }
+    return { success: true, finestre: finestre };
+  } catch(e) { return { success: false, message: e.message }; }
+}
+
+function saveFinestra(token, payload) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    var userCtx = verifySessionAndGetUser(token);
+    if (String(userCtx.ruolo).toUpperCase() !== 'ADMIN') throw new Error("Accesso negato.");
+    
+    var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+    var sheet = ss.getSheetByName(DB_CONFIG.SHEET_FINESTRE);
+    
+    // Ricavo il nome istituzione se è puntuale
+    var nomeIst = "TUTTE";
+    if (payload.tipo === 'PUNTUALE' && payload.idIst) {
+        nomeIst = payload.nomeIst; // Passato dal frontend per comodità
+    }
+
+    var newId = generateUUID();
+    sheet.appendRow([
+        newId, payload.modulo, payload.tipo, payload.idIst || "", nomeIst, 
+        payload.inizio, payload.fine, 'ATTIVA', userCtx.username
+    ]);
+    
+    SpreadsheetApp.flush();
+    return { success: true, message: "Finestra di apertura creata con successo." };
+  } catch(e) { 
+    return { success: false, message: "Errore salvataggio: " + e.message }; 
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function revocaFinestra(token, idFinestra) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    var userCtx = verifySessionAndGetUser(token);
+    if (String(userCtx.ruolo).toUpperCase() !== 'ADMIN') throw new Error("Accesso negato.");
+    
+    var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+    var sheet = ss.getSheetByName(DB_CONFIG.SHEET_FINESTRE);
+    var data = sheet.getDataRange().getValues();
+    
+    for (var i = 1; i < data.length; i++) {
+        if (String(data[i][COL_MAP.FINESTRE.ID]) === String(idFinestra)) {
+            sheet.getRange(i + 1, COL_MAP.FINESTRE.STATO + 1).setValue('REVOCATA');
+            SpreadsheetApp.flush();
+            return { success: true, message: "Finestra revocata con successo." };
+        }
+    }
+    throw new Error("Finestra non trovata.");
+  } catch(e) { return { success: false, message: e.message }; 
+  } finally { lock.releaseLock(); }
 }

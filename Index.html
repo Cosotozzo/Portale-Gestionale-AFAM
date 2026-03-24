@@ -357,7 +357,7 @@
                 </div>
             </div>
 
-        <div class="col-md-6 col-lg-3">
+            <div class="col-md-6 col-lg-3">
                 <div class="module-card" onclick="handleModuleAccess('BUDGET_ASS')">
                     <div class="card-body">
                         <i class="fas fa-briefcase card-icon"></i>
@@ -376,6 +376,18 @@
                 </div>
             </div>
          </div>
+
+          <div class="col-md-6 col-lg-3 hidden" id="module-card-finestre">
+                          <div class="module-card" style="border-bottom-color: var(--mur-yellow);" onclick="handleModuleAccess('FINESTRE')">
+                              <div class="card-body">
+                                  <i class="fas fa-calendar-alt card-icon" style="color: var(--mur-yellow);"></i>
+                                  <h5 class="card-title">Apertura Finestre</h5>
+                                  <p class="card-text">Gestione Periodi</p>
+                              </div>
+                          </div>
+                      </div>
+          </div>
+
       </div>
 
       <div id="view-module-cessazioni" class="view-section hidden">
@@ -588,9 +600,18 @@
 
     </div>
 
-    <datalist id="list-istituzioni"></datalist>
+<datalist id="list-istituzioni"></datalist>
 
     </main>
+
+<?!= include('GestioneFinestre'); ?>
+<footer class="footer-mur">
+        <div class="container">
+            <div class="text-center text-white small">Ministero dell'Università e della Ricerca / Tutti i diritti riservati © 2020 / Codice Fiscale: 96446770586</div>
+        </div>
+    </footer>
+
+    <div class="modal fade" id="genericModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
 
     <footer class="footer-mur"><div class="container"><div class="text-center text-white small">Ministero dell'Università e della Ricerca / Tutti i diritti riservati © 2020 / Codice Fiscale: 96446770586</div></div></footer>
 

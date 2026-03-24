@@ -15,12 +15,15 @@
   const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 Minuti
   let inactivityTimer;
 
-  const MODULES_CONFIG = {
+const MODULES_CONFIG = {
     'RCA': { status: 'SOON', msg: 'Servizio in attivazione.' },
     'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
     'BUDGET_ORG': { status: 'SOON', msg: 'Servizio in attivazione.' },
     'BUDGET_ASS': { status: 'SOON', msg: 'Servizio in attivazione.' },
-    'UTENZE': { status: 'ACTIVE', action: openUsersModule } 
+    'UTENZE': { status: 'ACTIVE', action: openUsersModule },
+    // INIZIO MODIFICA
+    'FINESTRE': { status: 'ACTIVE', action: openFinestreModule } 
+    // FINE MODIFICA
   };
 
 // --- INIZIALIZZAZIONE (Gestione F5 e Refresh) ---
@@ -129,20 +132,25 @@
       showToast("Errore: " + err.message, 'error');
   }
 
-  function updateUserInterface(user) {
+function updateUserInterface(user) {
       // Aggiorna Nome Utente nella Navbar
       const elName = document.getElementById('nav-user-name');
       if(elName) elName.innerText = escapeHtml(user.nome + " " + user.cognome);
       
       // Gestione visibilità card Admin
       const adminCard = document.getElementById('module-card-users');
-      if(adminCard) {
+      // INIZIO MODIFICA
+      const finestreCard = document.getElementById('module-card-finestre');
+      if(adminCard && finestreCard) {
           if (user.role && String(user.role).toUpperCase() === 'ADMIN') {
               adminCard.classList.remove('hidden');
+              finestreCard.classList.remove('hidden');
           } else {
               adminCard.classList.add('hidden');
+              finestreCard.classList.add('hidden');
           }
       }
+      // FINE MODIFICA
   }
 
   // --- NAVIGAZIONE ---
@@ -804,5 +812,88 @@ function filterAdminTable() {
     }
   }
 }
+
+  function openFinestreModule() {
+      showView('view-module-finestre');
+      loadFinestreTable();
+  }
+
+  function loadFinestreTable() {
+      toggleLoading(true);
+      google.script.run
+        .withSuccessHandler(res => {
+            toggleLoading(false);
+            if(res.success) renderFinestreTable(res.finestre);
+            else showToast(res.message, 'error');
+        })
+        .withFailureHandler(handleServerError)
+        .fetchFinestre(currentUser.token);
+  }
+
+  function renderFinestreTable(finestre) {
+      const tbody = document.getElementById('tbody-finestre');
+      tbody.innerHTML = '';
+      if(!finestre || finestre.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">Nessuna finestra configurata.</td></tr>';
+          return;
+      }
+
+      finestre.forEach(f => {
+          const badgeClass = f.stato === 'ATTIVA' ? 'bg-success' : 'bg-danger';
+          const btnRevoca = f.stato === 'ATTIVA' 
+              ? `<button class="btn btn-sm btn-outline-danger" onclick="revocaFinestra('${f.id}')" title="Revoca Apertura"><i class="fas fa-ban"></i></button>`
+              : '-';
+
+          tbody.innerHTML += `
+            <tr>
+                <td class="fw-bold">${escapeHtml(f.modulo)}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(f.tipo)}</span></td>
+                <td class="small">${escapeHtml(f.nomeIst)}</td>
+                <td class="small">${f.inizio}</td>
+                <td class="small">${f.fine}</td>
+                <td class="text-center"><span class="badge rounded-pill ${badgeClass}">${f.stato}</span></td>
+                <td class="text-center">${btnRevoca}</td>
+            </tr>
+          `;
+      });
+  }
+
+  function submitFinestra() {
+      const payload = {
+          modulo: document.getElementById('finestra-modulo').value,
+          tipo: document.getElementById('finestra-tipo').value,
+          nomeIst: document.getElementById('finestra-istituzione').value,
+          inizio: document.getElementById('finestra-inizio').value,
+          fine: document.getElementById('finestra-fine').value
+      };
+
+      if (!payload.inizio || !payload.fine) return showToast("Selezionare Data di Inizio e Fine", 'warning');
+      if (payload.tipo === 'PUNTUALE' && !payload.nomeIst) return showToast("Selezionare l'Istituzione per l'apertura puntuale.", 'warning');
+
+      toggleLoading(true);
+      google.script.run
+        .withSuccessHandler(res => {
+            toggleLoading(false);
+            if(res.success) {
+                showToast(res.message, 'success');
+                loadFinestreTable();
+            } else showToast(res.message, 'error');
+        })
+        .withFailureHandler(handleServerError)
+        .saveFinestra(currentUser.token, payload);
+  }
+
+  function revocaFinestra(id) {
+      if(!confirm("Vuoi davvero revocare questa finestra di apertura?")) return;
+      toggleLoading(true);
+      google.script.run
+        .withSuccessHandler(res => {
+            toggleLoading(false);
+            if(res.success) { showToast(res.message, 'success'); loadFinestreTable(); }
+            else showToast(res.message, 'error');
+        })
+        .withFailureHandler(handleServerError)
+        .revocaFinestra(currentUser.token, id);
+  }
 
 </script>
