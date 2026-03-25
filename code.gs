@@ -35,14 +35,9 @@ var COL_MAP = {
 // --- FUNZIONI DI SISTEMA E UTILITY ---
 
 function doGet() {
-  const now = new Date();
-  // Anno, Mese (0-based: 2 = Marzo), Giorno, Ore, Minuti, Secondi
-  const launchDate = new Date(2026, 2, 3, 8, 0, 0); 
-  
-  // Se la data attuale è minore del lancio, carica il Countdown, altrimenti l'Index normale.
-  const templateFile = (now < launchDate) ? 'Countdown' : 'Index';
-
-  return HtmlService.createTemplateFromFile(templateFile)
+  // Il controllo del Countdown è stato rimosso per delegare il blocco 
+  // alla nuova logica dinamica delle "Finestre Temporali".
+  return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Portale Gestione AFAM - MUR')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
