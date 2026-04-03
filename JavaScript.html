@@ -830,32 +830,69 @@ function filterAdminTable() {
         .fetchFinestre(currentUser.token);
   }
 
-  function renderFinestreTable(finestre) {
+function renderFinestreTable(finestre) {
       const tbody = document.getElementById('tbody-finestre');
       tbody.innerHTML = '';
+      
+      // Empty State Design
       if(!finestre || finestre.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">Nessuna finestra configurata.</td></tr>';
+          tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center py-5">
+                    <div class="d-flex flex-column align-items-center opacity-75">
+                        <i class="far fa-calendar-times mb-3" style="font-size: 4.5rem; color: #ced4da;"></i>
+                        <h5 class="text-muted fw-bold">Nessuna finestra configurata</h5>
+                        <p class="text-muted small mb-0">Clicca su "Nuova Finestra di Apertura" per abilitare l'accesso ai moduli.</p>
+                    </div>
+                </td>
+            </tr>`;
           return;
       }
 
-      finestre.forEach(f => {
-          const badgeClass = f.stato === 'ATTIVA' ? 'bg-success' : 'bg-danger';
-          const btnRevoca = f.stato === 'ATTIVA' 
-              ? `<button class="btn btn-sm btn-outline-danger" onclick="revocaFinestra('${f.id}')" title="Revoca Apertura"><i class="fas fa-ban"></i></button>`
-              : '-';
+      let htmlBuffer = [];
+      const now = new Date();
 
-          tbody.innerHTML += `
+      finestre.forEach(f => {
+          // Parsing sicuro della data Italiana (dd/MM/yyyy) proveniente dal backend
+          const dateString = String(f.inizio).split(' ')[0]; 
+          const parts = dateString.split('/');
+          const startDate = parts.length === 3 ? new Date(parts[2], parts[1] - 1, parts[0]) : new Date(0);
+          
+          // Logica Stato Dinamico
+          let statoHtml = '';
+          if (f.stato === 'REVOCATA') {
+              statoHtml = `<span class="text-danger fw-bold"><i class="fas fa-ban me-1"></i> Revocata</span>`;
+          } else if (startDate > now) {
+              statoHtml = `<span class="text-warning fw-bold text-dark"><i class="far fa-clock me-1"></i> Programmata</span>`;
+          } else {
+              statoHtml = `<span class="text-success fw-bold"><i class="fas fa-check-circle me-1"></i> Attiva</span>`;
+          }
+
+          // Bottoni Azione Minimalisti
+          const btnModifica = `<button class="btn btn-sm btn-link text-primary p-1" title="Modifica Finestra"><i class="fas fa-edit fs-5"></i></button>`;
+          const btnRevoca = f.stato !== 'REVOCATA' 
+              ? `<button class="btn btn-sm btn-link text-danger p-1" onclick="revocaFinestra('${f.id}')" title="Cancella / Revoca"><i class="fas fa-trash-alt fs-5"></i></button>`
+              : `<button class="btn btn-sm btn-link text-muted p-1" disabled title="Azione non disponibile"><i class="fas fa-trash-alt fs-5"></i></button>`;
+
+          htmlBuffer.push(`
             <tr>
-                <td class="fw-bold">${escapeHtml(f.modulo)}</td>
-                <td><span class="badge bg-light text-dark border">${escapeHtml(f.tipo)}</span></td>
+                <td class="fw-bold text-dark">${escapeHtml(f.modulo)}</td>
+                <td><span class="badge bg-light text-dark border"><i class="fas fa-globe-europe text-muted me-1"></i> ${escapeHtml(f.tipo)}</span></td>
                 <td class="small">${escapeHtml(f.nomeIst)}</td>
-                <td class="small">${f.inizio}</td>
-                <td class="small">${f.fine}</td>
-                <td class="text-center"><span class="badge rounded-pill ${badgeClass}">${f.stato}</span></td>
-                <td class="text-center">${btnRevoca}</td>
+                <td class="small text-muted"><i class="far fa-calendar-alt me-1"></i> ${f.inizio}</td>
+                <td class="small text-muted"><i class="far fa-calendar-check me-1"></i> ${f.fine}</td>
+                <td class="text-center">${statoHtml}</td>
+                <td class="text-center">
+                    <div class="d-flex justify-content-center gap-3">
+                        ${btnModifica}
+                        ${btnRevoca}
+                    </div>
+                </td>
             </tr>
-          `;
+          `);
       });
+      
+      tbody.innerHTML = htmlBuffer.join('');
   }
 
   function submitFinestra() {
@@ -876,8 +913,23 @@ function filterAdminTable() {
             toggleLoading(false);
             if(res.success) {
                 showToast(res.message, 'success');
+                
+                // Hide Modale in modo programmatico e pulito
+                const modalEl = document.getElementById('modalNuovaFinestra');
+                if (modalEl) {
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) modalInstance.hide();
+                }
+                
+                // Reset dei campi per il prossimo inserimento
+                document.getElementById('finestra-inizio').value = '';
+                document.getElementById('finestra-fine').value = '';
+                document.getElementById('finestra-istituzione').value = '';
+                
                 loadFinestreTable();
-            } else showToast(res.message, 'error');
+            } else {
+                showToast(res.message, 'error');
+            }
         })
         .withFailureHandler(handleServerError)
         .saveFinestra(currentUser.token, payload);

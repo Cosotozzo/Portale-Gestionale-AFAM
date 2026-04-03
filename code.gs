@@ -28,7 +28,7 @@ var COL_MAP = {
     ID_CESSAZIONE: 0, ID_ISTITUZIONE: 1, NOME: 3, COGNOME: 4, CF: 5, QUALIFICA: 6
   },
   FINESTRE: {
-    ID: 0, MODULO: 1, TIPO: 2, ID_IST: 3, NOME_IST: 4, INIZIO: 5, FINE: 6, STATO: 7, ADMIN: 8
+    ID: 0, MODULO: 1, TIPO: 2, ID_ISTITUZIONE: 3, NOME_ISTITUZIONE: 4, INIZIO: 5, FINE: 6, STATO: 7, ADMIN: 8
   }
 };
 
@@ -922,12 +922,12 @@ function fetchFinestre(token) {
 
     var data = sheet.getDataRange().getValues();
     var finestre = [];
-    for (var i = 1; i < data.length; i++) {
+for (var i = 1; i < data.length; i++) {
         finestre.push({
             id: data[i][COL_MAP.FINESTRE.ID],
             modulo: data[i][COL_MAP.FINESTRE.MODULO],
             tipo: data[i][COL_MAP.FINESTRE.TIPO],
-            nomeIst: data[i][COL_MAP.FINESTRE.NOME_IST],
+            nomeIst: data[i][COL_MAP.FINESTRE.NOME_ISTITUZIONE], // Aggiornato per puntare alla nuova chiave
             inizio: formatDateSafe(data[i][COL_MAP.FINESTRE.INIZIO]),
             fine: formatDateSafe(data[i][COL_MAP.FINESTRE.FINE]),
             stato: data[i][COL_MAP.FINESTRE.STATO]
