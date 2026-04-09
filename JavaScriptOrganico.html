@@ -1,0 +1,178 @@
+<script>
+/**
+ * Controller Client-Side per Modulo Scambio Budget
+ * Architettura: ES6, Async Pattern con google.script.run
+ */
+
+document.addEventListener("DOMContentLoaded", () => {
+    // Inizializza il modulo se il container esiste nella vista corrente
+    if(document.getElementById('scambio-budget-container')) {
+        initBudgetModulo();
+    }
+});
+
+const initBudgetModulo = () => {
+    loadDashboardData();
+};
+
+// ==========================================
+// 1. LETTURA DATI (READ)
+// ==========================================
+const loadDashboardData = () => {
+    // Feedback visivo: attivato di default nell'HTML (spinner nella tabella)
+    
+    google.script.run
+        .withSuccessHandler(handleDashboardDataSuccess)
+        .withFailureHandler(handleRpcError)
+        .getBudgetDashboardData(); // API RPC da sviluppare in Code.gs
+};
+
+const handleDashboardDataSuccess = (response) => {
+    try {
+        const { stats, transazioni, istituzioni } = response;
+        
+        // 1. Aggiorna KPI
+        document.getElementById('stat-saldo-iniziale').innerText = formatCurrency(stats.saldoIniziale);
+        document.getElementById('stat-saldo-pendenza').innerText = formatCurrency(stats.saldoInPendenza);
+        document.getElementById('stat-saldo-disponibile').innerText = formatCurrency(stats.saldoDisponibile);
+        
+        // 2. Popola Tabella
+        renderTableBudget(transazioni);
+        
+        // 3. Popola Select Modale
+        populateSelectCedenti(istituzioni);
+        
+    } catch (error) {
+        console.error("Errore nel parsing dei dati della dashboard:", error);
+        showToast("Errore di rendering dati", "danger");
+    }
+};
+
+const renderTableBudget = (transazioni) => {
+    const tbody = document.getElementById('tbodyBudget');
+    
+    if (!transazioni || transazioni.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-muted">Nessuna transazione trovata.</td></tr>`;
+        return;
+    }
+
+    const rowsHtml = transazioni.map(t => `
+        <tr>
+            <td>${t.data}</td>
+            <td><span class="badge ${t.tipo === 'INVIATA' ? 'bg-warning' : 'bg-info'}">${t.tipo}</span></td>
+            <td>${t.partner}</td>
+            <td class="font-weight-bold">€ ${t.importo}</td>
+            <td>${getStatoBadge(t.stato)}</td>
+            <td class="text-center">
+                ${generateAzioniHtml(t)}
+            </td>
+        </tr>
+    `).join('');
+    
+    tbody.innerHTML = rowsHtml;
+};
+
+// ==========================================
+// 2. SCRITTURA DATI (WRITE)
+// ==========================================
+const openNuovaRichiestaModal = () => {
+    // Reset form e mostra modale (usa le API di Bootstrap Italia / Bootstrap 5)
+    document.getElementById('formRichiestaBudget').reset();
+    const modalEl = document.getElementById('modalRichiestaBudget');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+};
+
+const submitRichiestaBudget = () => {
+    const btnSubmit = document.querySelector('#modalRichiestaBudget .btn-primary');
+    const form = document.getElementById('formRichiestaBudget');
+    
+    if(!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    // Costruzione Payload (Sanitizzazione base)
+    const payload = {
+        cedenteId: document.getElementById('selectCedente').value,
+        importo: parseFloat(document.getElementById('inputImporto').value).toFixed(2),
+        note: document.getElementById('inputNote').value.trim()
+    };
+
+    if(payload.importo <= 0) {
+        showToast("L'importo deve essere maggiore di zero.", "warning");
+        return;
+    }
+
+    // Lock UI
+    btnSubmit.disabled = true;
+    btnSubmit.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Invio...`;
+
+    google.script.run
+        .withSuccessHandler((res) => {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modalRichiestaBudget'));
+            modal.hide();
+            showToast("Richiesta inviata con successo!", "success");
+            loadDashboardData(); // Refresh silente
+        })
+        .withFailureHandler((err) => {
+            handleRpcError(err);
+            // Unlock UI
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = `Invia Richiesta Ufficiale`;
+        })
+        .submitBudgetRequest(payload); // API RPC da sviluppare in Code.gs
+};
+
+// ==========================================
+// 3. UTILITIES
+// ==========================================
+const populateSelectCedenti = (istituzioni) => {
+    const select = document.getElementById('selectCedente');
+    // Mantiene solo l'opzione placeholder
+    select.innerHTML = `<option value="" selected disabled>Seleziona un'istituzione...</option>`;
+    istituzioni.forEach(ist => {
+        select.innerHTML += `<option value="${ist.id}">${ist.nome}</option>`;
+    });
+};
+
+const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount);
+};
+
+const getStatoBadge = (stato) => {
+    const map = {
+        'INVIATA': '<span class="badge bg-primary">Inviata</span>',
+        'ACCETTATA': '<span class="badge bg-success">Accettata</span>',
+        'RIFIUTATA': '<span class="badge bg-danger">Rifiutata</span>',
+        'ANNULLATA': '<span class="badge bg-secondary">Annullata</span>'
+    };
+    return map[stato] || `<span class="badge bg-light text-dark">${stato}</span>`;
+};
+
+const generateAzioniHtml = (transazione) => {
+    // Logica View-level per i pulsanti. La vera validazione sarà Backend.
+    let html = '';
+    if (transazione.tipo === 'RICEVUTA' && transazione.stato === 'INVIATA') {
+        html += `<button class="btn btn-sm btn-success mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ACCETTA')">Accetta</button>`;
+        html += `<button class="btn btn-sm btn-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'RIFIUTA')">Rifiuta</button>`;
+    } else if (transazione.tipo === 'INVIATA' && transazione.stato === 'INVIATA') {
+        html += `<button class="btn btn-sm btn-outline-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ANNULLA')">Annulla</button>`;
+    }
+    return html || '-';
+};
+
+const handleRpcError = (error) => {
+    console.error("RPC Error:", error);
+    showToast(error.message || "Si è verificato un errore di rete.", "danger");
+};
+
+// Fallback Toast se non presente nel framework globale
+const showToast = (message, type) => {
+    if(typeof app !== 'undefined' && app.showToast) {
+        app.showToast(message, type);
+    } else {
+        alert(`${type.toUpperCase()}: ${message}`);
+    }
+};
+</script>
