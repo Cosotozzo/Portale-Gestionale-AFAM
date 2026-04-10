@@ -36,6 +36,11 @@ var COL_MAP = {
   },
   BUDGET_TRANS: {
     ID_TRANS: 0, ID_RICHIEDENTE: 1, ID_CEDENTE: 2, STATO: 3, JSON_BLOB: 4
+  }, // <-- INSERIRE LA VIRGOLA QUI
+// INIZIO MODIFICA
+  BUDGET_EXP: {
+    ID_CEDENTE: 0, DENOM_CEDENTE: 1, RESIDUO_ANTE_CED: 2, RESIDUO_POST_CED: 3,
+    ID_ACQUIRENTE: 4, DENOM_ACQUIRENTE: 5, RESIDUO_ANTE_ACQ: 6, RESIDUO_POST_ACQ: 7, VALORE_SCAMB: 8
   }
 };
 
@@ -926,6 +931,71 @@ function syncExportTable() {
 
   } catch(e) {
     Logger.log("Errore Critico SyncExport: " + e.toString());
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * API RPC: Gestisce l'invio di una nuova richiesta di budget.
+ * Il JSON_Blob viene strutturato qui lato server garantendo il logging completo.
+ */
+function submitBudgetRequest(payload) {
+  // NOTA: in un'integrazione reale il token andrà passato dal client per il context
+  // var userCtx = verifySessionAndGetUser(payload.token); 
+  // var idRichiedente = String(userCtx.istituzioneId);
+  var idRichiedente = "IST_MOCK"; // Da sostituire con contesto reale
+
+  var lock = LockService.getScriptLock();
+  try {
+    // Pessimistic Locking come da Specifica (Cap 5)
+    if (!lock.tryLock(5000)) {
+      throw new Error("Il sistema è momentaneamente occupato. Riprovare.");
+    }
+
+    var importo = parseFloat(payload.importo);
+    if (isNaN(importo) || importo <= 0) {
+        throw new Error("Importo non valido.");
+    }
+
+    var now = new Date().toISOString();
+    
+    // Costruzione rigorosa del JSON_Blob con tracciamento temporale completo
+    var dataBlob = {
+      importo_richiesto: importo,
+      history: [
+        {
+          timestamp: now,
+          attore: idRichiedente,
+          ruolo_attore: "RICHIEDENTE",
+          azione: "CREAZIONE_E_INVIO",
+          note: payload.note ? String(payload.note).trim() : ""
+        }
+      ]
+    };
+
+    var idTransazione = Utilities.getUuid();
+    var statoIniziale = "INVIATA"; 
+
+    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+    
+    // Inserimento rispettando COL_MAP.BUDGET_TRANS: 
+    // ID_TRANS, ID_RICHIEDENTE, ID_CEDENTE, STATO, JSON_BLOB
+    sheetTrans.appendRow([
+      idTransazione,
+      idRichiedente,
+      String(payload.cedenteId).trim(),
+      statoIniziale,
+      JSON.stringify(dataBlob)
+    ]);
+    
+    SpreadsheetApp.flush();
+    return { success: true };
+
+  } catch (e) {
+    Logger.log("Errore submitBudgetRequest: " + e.message);
+    throw new Error(e.message);
   } finally {
     lock.releaseLock();
   }
