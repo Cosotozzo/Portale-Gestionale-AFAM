@@ -31,9 +31,10 @@ const handleDashboardDataSuccess = (response) => {
     try {
         const { stats, transazioni, istituzioni } = response;
         
-        // 1. Aggiorna KPI
+        // 1. Aggiorna KPI con i 4 parametri derivanti dal calcolo dinamico server-side
         document.getElementById('stat-saldo-iniziale').innerText = formatCurrency(stats.saldoIniziale);
-        document.getElementById('stat-saldo-pendenza').innerText = formatCurrency(stats.saldoInPendenza);
+        document.getElementById('stat-entrate').innerText = formatCurrency(stats.entrateAccettate);
+        document.getElementById('stat-uscite-pendenza').innerText = formatCurrency(stats.uscitePendenti);
         document.getElementById('stat-saldo-disponibile').innerText = formatCurrency(stats.saldoDisponibile);
         
         // 2. Popola Tabella
@@ -142,23 +143,38 @@ const formatCurrency = (amount) => {
 
 const getStatoBadge = (stato) => {
     const map = {
+        'BOZZA_RICHIEDENTE': '<span class="badge bg-secondary">Bozza (Rich.)</span>',
         'INVIATA': '<span class="badge bg-primary">Inviata</span>',
+        'BOZZA_CEDENTE': '<span class="badge bg-secondary">Bozza (Cedente)</span>',
         'ACCETTATA': '<span class="badge bg-success">Accettata</span>',
         'RIFIUTATA': '<span class="badge bg-danger">Rifiutata</span>',
-        'ANNULLATA': '<span class="badge bg-secondary">Annullata</span>'
+        'IN_INTEGRAZIONE': '<span class="badge bg-warning text-dark">In Integrazione</span>',
+        'ANNULLATA_MINISTERO': '<span class="badge bg-dark">Annullata (Min.)</span>'
     };
     return map[stato] || `<span class="badge bg-light text-dark">${stato}</span>`;
 };
 
 const generateAzioniHtml = (transazione) => {
-    // Logica View-level per i pulsanti. La vera validazione sarà Backend.
     let html = '';
-    if (transazione.tipo === 'RICEVUTA' && transazione.stato === 'INVIATA') {
-        html += `<button class="btn btn-sm btn-success mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ACCETTA')">Accetta</button>`;
-        html += `<button class="btn btn-sm btn-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'RIFIUTA')">Rifiuta</button>`;
-    } else if (transazione.tipo === 'INVIATA' && transazione.stato === 'INVIATA') {
-        html += `<button class="btn btn-sm btn-outline-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ANNULLA')">Annulla</button>`;
+    
+    // Logica se l'utente loggato è il CEDENTE (Partner riceve)
+    if (transazione.tipo === 'RICEVUTA') {
+        if (transazione.stato === 'INVIATA' || transazione.stato === 'BOZZA_CEDENTE') {
+            html += `<button class="btn btn-sm btn-success mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ACCETTA')">Accetta</button>`;
+            html += `<button class="btn btn-sm btn-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'RIFIUTA')">Rifiuta</button>`;
+            html += `<button class="btn btn-sm btn-warning mx-1" onclick="gestisciRichiesta('${transazione.id}', 'IN_INTEGRAZIONE')">Chiedi Integ.</button>`;
+        }
+    } 
+    // Logica se l'utente loggato è il RICHIEDENTE (Invia richiesta)
+    else if (transazione.tipo === 'INVIATA') {
+        if (transazione.stato === 'BOZZA_RICHIEDENTE') {
+            html += `<button class="btn btn-sm btn-primary mx-1" onclick="gestisciRichiesta('${transazione.id}', 'INVIA')">Invia Definitivo</button>`;
+            html += `<button class="btn btn-sm btn-outline-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ELIMINA_BOZZA')">Elimina</button>`;
+        } else if (transazione.stato === 'IN_INTEGRAZIONE') {
+            html += `<button class="btn btn-sm btn-warning mx-1" onclick="modificaRichiesta('${transazione.id}')">Modifica/Integra</button>`;
+        }
     }
+    
     return html || '-';
 };
 

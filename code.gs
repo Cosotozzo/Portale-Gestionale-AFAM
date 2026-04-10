@@ -70,6 +70,22 @@ function generateUUID() { return Utilities.getUuid(); }
 
 function generateUUID() { return Utilities.getUuid(); }
 
+/**
+ * Verifica se il modulo Scambio Budget è attivo tramite ScriptProperties.
+ * Approccio Zero Trust: se fallisce, nega l'accesso di default.
+ */
+function isScambioBudgetAttivo() {
+  try {
+    Logger.log("[MASTER SWITCH] Lettura stato Scambio Budget.");
+    var props = PropertiesService.getScriptProperties();
+    var status = props.getProperty('SCAMBIO_BUDGET_ATTIVO');
+    return status === 'TRUE';
+  } catch(e) {
+    Logger.log("[ERRORE] ScriptProperties irraggiungibili: " + e.message);
+    return false; // Fail-safe: modulo chiuso in caso di errore
+  }
+}
+
 // --- CORE: GESTIONE SESSIONE (SICUREZZA & PERFORMANCE) ---
 
 // INIZIO MODIFICA

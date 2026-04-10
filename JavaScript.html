@@ -450,10 +450,39 @@ function submitRegistration() {
       google.script.run.withSuccessHandler(res => { toggleLoading(false); if(res.success){ showToast("Password Reset Ok", 'success'); showView('view-login'); } else showToast(res.message, 'error'); }).resetPasswordByData({ institutionName: inst, cf: document.getElementById('reset-cf').value, username: document.getElementById('reset-email').value, pin: document.getElementById('reset-pin').value, newPassword: document.getElementById('reset-new-pass').value });
   }
 
-  function handleModuleAccess(key) {
+function handleModuleAccess(key) {
       const cfg = MODULES_CONFIG[key];
-      if(cfg.status === 'ACTIVE') cfg.action();
-      else showToast(cfg.msg, 'warning');
+      if(cfg.status === 'ACTIVE') {
+          cfg.action();
+      } else if (cfg.status === 'DYNAMIC') {
+          cfg.action(); // Delega il blocco alla funzione specifica
+      } else {
+          showToast(cfg.msg, 'warning');
+      }
+  }
+
+  function openBudgetAssunzionaleModule() {
+      // 1. Bypass Admin e Ministero (Specifica Punto 6.1)
+      const userRole = String(currentUser.role).toUpperCase();
+      if (userRole === 'ADMIN' || userRole === 'MINISTERO') {
+          // NOTA: Sostituisci 'view-ScambioBudgetOrganico' con l'ID reale del DIV della tua pagina
+          showView('view-ScambioBudgetOrganico'); 
+          return;
+      }
+      
+      // 2. Controllo Istituzioni: Interrogazione asincrona
+      toggleLoading(true);
+      google.script.run
+          .withSuccessHandler(isAttivo => {
+              toggleLoading(false);
+              if (isAttivo) {
+                  showView('view-ScambioBudgetOrganico');
+              } else {
+                  showToast("Funzionalità non ancora attivata dal Ministero.", "warning");
+              }
+          })
+          .withFailureHandler(handleServerError)
+          .isScambioBudgetAttivo();
   }
 
   // --- CESSAZIONI ---
