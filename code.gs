@@ -30,6 +30,9 @@ var COL_MAP = {
   ANAG_CESS: {
     ID_CESSAZIONE: 0, ID_ISTITUZIONE: 1, NOME: 3, COGNOME: 4, CF: 5, QUALIFICA: 6
   },
+  ANAG_UTENTI: {
+    ID_ISTITUZIONE: 0, CF: 1, NOME: 2, COGNOME: 3, RUOLO: 4
+  },
   // Mapping Colonne Modulo Budget
   BUDGET_BASE: {
     ID_ISTITUZIONE: 0, DENOMINAZIONE: 1, BUDGET_INIZIALE: 2
@@ -82,10 +85,6 @@ function hashPassword(password, salt) {
 
 function generateUUID() { return Utilities.getUuid(); }
 
-// --- CORE: GESTIONE SESSIONE (SICUREZZA) ---
-
-function generateUUID() { return Utilities.getUuid(); }
-
 /**
  * Verifica se il modulo Scambio Budget è attivo tramite ScriptProperties.
  * Approccio Zero Trust: se fallisce, nega l'accesso di default.
@@ -104,50 +103,53 @@ function isScambioBudgetAttivo() {
 
 // --- CORE: GESTIONE SESSIONE (SICUREZZA & PERFORMANCE) ---
 
-// INIZIO MODIFICA
 function verifySessionAndGetUser(token) {
   if (!token) throw new Error("Sessione non valida. Effettua nuovamente il login.");
-
-  // 1. PROVA A LEGGERE DALLA CACHE VELOCE
-  var cache = CacheService.getScriptCache();
-  var cachedUser = cache.get("SESSION_" + token);
   
+  // 1. PROVA A LEGGERE DALLA CACHE VELOCE
+  const cache = CacheService.getScriptCache();
+  const cachedUser = cache.get("SESSION_" + token);
   if (cachedUser) {
     return JSON.parse(cachedUser);
   }
 
-  // 2. FALLBACK: SE NON IN CACHE, LEGGI IL FOGLIO (LENTO)
-  var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
-  var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
-  var data = sheetCred.getDataRange().getValues();
+  // 2. FALLBACK: SE NON IN CACHE, USA TEXTFINDER (VELOCE)
+  const ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+  const sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
   
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][COL_MAP.CRED.SESSION_ID]) === token) {
-      if (data[i][COL_MAP.CRED.STATO] !== 'ATTIVO') throw new Error("Utenza disabilitata.");
-      
-      // Update Heartbeat (opzionale: fallo meno spesso per performance, qui lo lasciamo per sicurezza)
-      try { sheetCred.getRange(i + 1, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date()); } catch(e){}
+  // TextFinder mirato sulla colonna SESSION_ID
+  const finder = sheetCred.getRange(1, COL_MAP.CRED.SESSION_ID + 1, sheetCred.getLastRow(), 1)
+                          .createTextFinder(token)
+                          .matchEntireCell(true);
+  const result = finder.findNext();
+  
+  if (result) {
+    const rowIndex = result.getRow();
+    const rowData = sheetCred.getRange(rowIndex, 1, 1, sheetCred.getLastColumn()).getValues()[0];
+    
+    if (rowData[COL_MAP.CRED.STATO] !== 'ATTIVO') throw new Error("Utenza disabilitata o non autorizzata.");
+    
+    try { 
+      sheetCred.getRange(rowIndex, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date());
+    } catch(e){}
 
-      var userObj = {
-        rowIndex: i + 1,
-        username: data[i][COL_MAP.CRED.USERNAME],
-        istituzioneId: data[i][COL_MAP.CRED.ISTITUZIONE_ID],
-        ruolo: data[i][COL_MAP.CRED.RUOLO],
-        nome: data[i][COL_MAP.CRED.NOME],
-        cognome: data[i][COL_MAP.CRED.COGNOME]
-      };
-
-      // 3. SALVA IN CACHE PER 20 MINUTI (1200 secondi)
-      // Così le prossime chiamate non leggeranno il foglio
-      cache.put("SESSION_" + token, JSON.stringify(userObj), 1200);
-
-      return userObj;
-    }
+    const userObj = {
+      rowIndex: rowIndex,
+      username: rowData[COL_MAP.CRED.USERNAME],
+      istituzioneId: rowData[COL_MAP.CRED.ISTITUZIONE_ID],
+      ruolo: rowData[COL_MAP.CRED.RUOLO],
+      nome: rowData[COL_MAP.CRED.NOME],
+      cognome: rowData[COL_MAP.CRED.COGNOME]
+    };
+    
+    // 3. SALVA IN CACHE PER 20 MINUTI (1200 secondi)
+    cache.put("SESSION_" + token, JSON.stringify(userObj), 1200);
+    return userObj;
   }
+  
   throw new Error("Sessione scaduta o invalida.");
 }
 
-// INIZIO MODIFICA
 /**
  * Tenta di ripristinare la sessione utente dato un token.
  * Usato dal frontend al refresh (F5) della pagina.
@@ -205,8 +207,12 @@ function doLogin(formObject) {
       var salt = targetUser[COL_MAP.CRED.SALT];
 
       if (hashPassword(passwordInput, salt) === storedHash) {
-        if (targetUser[COL_MAP.CRED.STATO] !== 'ATTIVO') {
-          return { success: false, message: "Utenza in attesa di approvazione d parte del Ministero." };
+        const statoUtenza = targetUser[COL_MAP.CRED.STATO];
+        if (statoUtenza !== 'ATTIVO') {
+          if (statoUtenza === 'RIFIUTATO') {
+            return { success: false, message: "La richiesta di attivazione per l'utenza è stata rifiutata dal Ministero." };
+          }
+          return { success: false, message: "Utenza in attesa di approvazione da parte del Ministero." };
         }
       } else { 
         return { success: false, message: "Password errata." };
@@ -698,27 +704,29 @@ function registerUser(formObject) {
     var inputNome = String(formObject.nome).toUpperCase().trim().replace(/\s+/g, ' '); 
     var inputCognome = String(formObject.cognome).toUpperCase().trim().replace(/\s+/g, ' ');
     
-    for (var i = 1; i < dataAnag.length; i++) {
-      // Check flessibile sul CF
-      if (String(dataAnag[i][0]) === String(foundIdIstituzione) && String(dataAnag[i][1]).toUpperCase().trim().replace(/\s+/g, '') === inputCF) {
+for (var i = 1; i < dataAnag.length; i++) {
+      // Check sul CF usando la mappatura corretta
+      if (String(dataAnag[i][COL_MAP.ANAG_UTENTI.ID_ISTITUZIONE]) === String(foundIdIstituzione) && 
+          String(dataAnag[i][COL_MAP.ANAG_UTENTI.CF]).toUpperCase().trim().replace(/\s+/g, '') === inputCF) {
         
-        var dbNome = String(dataAnag[i][2]).toUpperCase().trim().replace(/\s+/g, ' ');
-        var dbCognome = String(dataAnag[i][3]).toUpperCase().trim().replace(/\s+/g, ' ');
+        const dbNome = String(dataAnag[i][COL_MAP.ANAG_UTENTI.NOME]).toUpperCase().trim().replace(/\s+/g, ' ');
+        const dbCognome = String(dataAnag[i][COL_MAP.ANAG_UTENTI.COGNOME]).toUpperCase().trim().replace(/\s+/g, ' ');
         
-// INIZIO MODIFICA
-        // Confronto più permissivo: controlla se la stringa DB "contiene" l'input o viceversa, oppure uguaglianza esatta
-        // Questo aiuta se nel DB è "Mario Antonio" e l'utente scrive "Mario"
-        var nameMatch = (dbNome === inputNome); 
-        var surnameMatch = (dbCognome === inputCognome);
+        // Confronto flessibile: true se il database contiene l'input (es. db: "Mario Antonio", input: "Mario") o viceversa
+        const nameMatch = dbNome.includes(inputNome) || inputNome.includes(dbNome);
+        const surnameMatch = dbCognome.includes(inputCognome) || inputCognome.includes(dbCognome);
 
         if (!nameMatch || !surnameMatch) {
-            // Log per debug (opzionale)
-            Logger.log("Mismatch Anagrafica: DB[" + dbNome + " " + dbCognome + "] vs INPUT[" + inputNome + " " + inputCognome + "]");
-            return { success: false, message: "Il Nominativo inserito non corrisponde esattamente all'anagrafica (" + dbNome + " " + dbCognome + ")." };
+            Logger.log(`Mismatch Anagrafica: DB[${dbNome} ${dbCognome}] vs INPUT[${inputNome} ${inputCognome}]`);
+            return { success: false, message: `Il Nominativo inserito non corrisponde all'anagrafica (${dbNome} ${dbCognome}).` };
         }
+        
         userWhitelist = { 
-            idIstituzione: String(dataAnag[i][0]), cf: inputCF, 
-            nome: dataAnag[i][2], cognome: dataAnag[i][3], ruolo: dataAnag[i][4] 
+            idIstituzione: String(dataAnag[i][COL_MAP.ANAG_UTENTI.ID_ISTITUZIONE]), 
+            cf: inputCF, 
+            nome: dataAnag[i][COL_MAP.ANAG_UTENTI.NOME], 
+            cognome: dataAnag[i][COL_MAP.ANAG_UTENTI.COGNOME], 
+            ruolo: dataAnag[i][COL_MAP.ANAG_UTENTI.RUOLO] 
         };
         break;
       }
