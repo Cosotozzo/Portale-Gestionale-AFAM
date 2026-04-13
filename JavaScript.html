@@ -18,7 +18,7 @@
 const MODULES_CONFIG = {
     'RCA': { status: 'SOON', msg: 'Servizio in attivazione.' },
     'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
-    'BUDGET_ORG': { status: 'DYNAMIC', action: openBudgetAssunzionaleModule },
+    'BUDGET_ORG': { status: 'DYNAMIC', action: openBudgetOrganicoModule },
     'BUDGET_ASS': { status: 'SOON', msg: 'Servizio in attivazione.' },
     'UTENZE': { status: 'ACTIVE', action: openUsersModule },
   };
@@ -461,7 +461,7 @@ function handleModuleAccess(key) {
       }
   }
 
-  function openBudgetAssunzionaleModule() {
+function openBudgetOrganicoModule() {
       // 1. Bypass Admin e Ministero (Specifica Punto 6.1)
       const userRole = String(currentUser.role).toUpperCase();
       if (userRole === 'ADMIN' || userRole === 'MINISTERO') {
