@@ -59,11 +59,11 @@ const handleDashboardDataSuccess = (response) => {
             document.getElementById('stat-entrate').innerText = formatCurrency(stats.entrateAccettate);
             document.getElementById('stat-uscite-pendenza').innerText = formatCurrency(stats.uscitePendenti);
             document.getElementById('stat-saldo-disponibile').innerText = formatCurrency(stats.saldoDisponibile);
+            
+            // Le chiamate di rendering dell'istituzione devono restare nel loro scope
+            renderTableBudget(transazioni);
+            populateSelectCedenti(istituzioni);
         }
-        
-        renderTableBudget(transazioni);
-        populateSelectCedenti(istituzioni);
-        
     } catch (error) {
         console.error("Errore nel parsing dei dati della dashboard:", error);
         showToast("Errore di rendering dati", "danger");
