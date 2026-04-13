@@ -76,7 +76,7 @@ const handleDashboardDataSuccess = (response) => {
 const handleMasterSwitchChange = (element) => {
     const newState = element.checked;
     element.disabled = true; // Blocco UI temporaneo
-    const label = document.getElementById('masterSwitchLabel');
+const label = document.getElementById('masterSwitchLabelMin');
     label.innerText = "Salvataggio...";
 
     const token = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.token : null;
@@ -86,7 +86,7 @@ const handleMasterSwitchChange = (element) => {
             element.disabled = false;
             if(res.success) {
                 showToast(res.message, "success");
-                label.innerText = newState ? "MODULO ATTIVO" : "MODULO DISATTIVATO";
+                label.innerText = newState ? "ATTIVO" : "DISATTIVATO";
                 label.className = newState ? "custom-control-label font-weight-bold text-success" : "custom-control-label font-weight-bold text-danger";
             } else {
                 element.checked = !newState; // Revert
