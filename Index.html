@@ -365,6 +365,16 @@
                     </div>
                 </div>
             </div>
+
+            <div class="col-md-6 col-lg-3 hidden" id="module-card-users">
+                <div class="module-card" onclick="handleModuleAccess('UTENZE')">
+                    <div class="card-body">
+                        <i class="fas fa-user-check card-icon"></i>
+                        <h5 class="card-title">Gestione Utenze</h5>
+                    </div>
+                </div>
+            </div>
+
          </div>
 
           <div class="col-md-6 col-lg-3 hidden" id="module-card-finestre">
@@ -588,6 +598,10 @@
           </div>
       </div>
 
+      <div id="view-ScambioBudgetOrganico" class="view-section hidden">
+          <?!= include('ScambioBudgetOrganico'); ?>
+      </div>
+
     </div>
 
 <datalist id="list-istituzioni"></datalist>
@@ -621,5 +635,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <?!= include('JavaScript'); ?>
+    <?!= include('JavaScriptOrganico'); ?>
   </body>
 </html>

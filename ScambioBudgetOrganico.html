@@ -1,15 +1,26 @@
 <div class="container-fluid py-4" id="scambio-budget-container">
-    <div class="row mb-4">
-        <div class="col-12 d-flex justify-content-between align-items-center">
+    
+    <div id="istituzione-budget-container">
+        <div class="row mb-4">
+            <div class="col-12 d-flex justify-content-between align-items-center">
             <h3 class="text-primary font-weight-bold">Scambio Budget Assunzionale</h3>
-            <button type="button" class="btn btn-primary btn-icon" onclick="openNuovaRichiestaModal()">
+            
+            <div id="admin-switch-container" class="d-none bg-light p-3 rounded border border-warning">
+                <span class="font-weight-bold text-dark mr-3"><i class="fas fa-cogs mr-1"></i> Admin Console:</span>
+                <div class="custom-control custom-switch d-inline-block">
+                    <input type="checkbox" class="custom-control-input" id="masterSwitchBudget" onchange="handleMasterSwitchChange(this)">
+                    <label class="custom-control-label font-weight-bold" for="masterSwitchBudget" id="masterSwitchLabel">Caricamento Stato...</label>
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-primary btn-icon" onclick="openNuovaRichiestaModal()" id="btn-nuova-richiesta">
                 <svg class="icon icon-white"><use xlink:href="/bootstrap-italia/dist/svg/sprites.svg#it-plus"></use></svg>
                 <span>Invia Nuova Richiesta</span>
             </button>
         </div>
     </div>
 
-    <div class="row mb-4">
+    <div class="row mb-4" id="kpi-dashboard-container">
         <div class="col-md-3">
             <div class="card shadow-sm border-left-primary h-100">
                 <div class="card-body">
@@ -46,15 +57,15 @@
 
     <div class="card shadow-sm">
         <div class="card-header py-3 d-flex justify-content-between align-items-center">
-            <h6 class="m-0 font-weight-bold text-primary">Storico Operazioni (Inviate e Ricevute)</h6>
+            <h6 class="m-0 font-weight-bold text-primary" id="titolo-tabella-dashboard">Storico Operazioni (Inviate e Ricevute)</h6>
             <div class="form-group mb-0">
-                <input type="text" class="form-control form-control-sm" id="searchTable" placeholder="Cerca istituzione...">
+                <input type="text" class="form-control form-control-sm" id="searchTable" placeholder="Cerca...">
             </div>
         </div>
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-hover" id="tableBudget" width="100%" cellspacing="0">
-                    <thead>
+                    <thead id="theadBudget">
                         <tr>
                             <th>Data</th>
                             <th>Tipo</th>
@@ -76,6 +87,54 @@
                 </table>
             </div>
         </div>
+    </div>
+    <div id="ministero-budget-container" class="hidden">
+        <div class="row mb-4">
+            <div class="col-12"><h3 class="text-primary font-weight-bold">Scambio Budget Assunzionale (Monitoraggio)</h3></div>
+        </div>
+        <div class="card shadow-sm mb-4">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Saldo e Scambi Istituzioni</h6>
+                <div class="form-group mb-0">
+                    <input type="text" class="form-control form-control-sm" id="searchMinisteroTable" placeholder="Cerca istituzione..." onkeyup="filterMinisteroBudget()">
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle" width="100%">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Istituzione</th>
+                                <th class="text-end">Budget Iniziale</th>
+                                <th class="text-end">Valore di Scambio</th>
+                                <th class="text-end">Nuovo Residuo</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyMinisteroBudget">
+                            <tr><td colspan="4" class="text-center py-4"><div class="spinner-border text-primary"></div></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal fade" id="modalDettagliMinistero" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header bg-light">
+            <h5 class="modal-title text-primary fw-bold" id="modalDettagliTitle">Dettaglio Movimentazioni</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+          </div>
+          <div class="modal-body p-0">
+             <div class="table-responsive m-0">
+                <table class="table table-striped table-hover m-0">
+                    <thead class="table-light"><tr><th>Data</th><th>Tipo Movimento / Partner</th><th>Stato</th><th class="text-end">Importo (€)</th></tr></thead>
+                    <tbody id="tbodyDettagliTransazioni"></tbody>
+                </table>
+             </div>
+          </div>
+        </div>
+      </div>
     </div>
 </div>
 

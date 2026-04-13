@@ -940,14 +940,12 @@ function syncExportTable() {
  * API RPC: Gestisce l'invio di una nuova richiesta di budget.
  * Il JSON_Blob viene strutturato qui lato server garantendo il logging completo.
  */
-function submitBudgetRequest(payload) {
-  // NOTA: in un'integrazione reale il token andrà passato dal client per il context
-  // var userCtx = verifySessionAndGetUser(payload.token); 
-  // var idRichiedente = String(userCtx.istituzioneId);
-  var idRichiedente = "IST_MOCK"; // Da sostituire con contesto reale
-
+function submitBudgetRequest(token, payload) {
   var lock = LockService.getScriptLock();
   try {
+    var userCtx = verifySessionAndGetUser(token);
+    var idRichiedente = String(userCtx.istituzioneId);
+
     // Pessimistic Locking come da Specifica (Cap 5)
     if (!lock.tryLock(5000)) {
       throw new Error("Il sistema è momentaneamente occupato. Riprovare.");
@@ -999,4 +997,143 @@ function submitBudgetRequest(payload) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * API RPC: Recupera i dati della dashboard Scambio Budget
+ * Zero Trust: Calcola i saldi e le transazioni dinamicamente lato server
+ */
+function getBudgetDashboardData(token) {
+  try {
+    var userCtx = verifySessionAndGetUser(token);
+    var ruolo = String(userCtx.ruolo).toUpperCase().trim();
+    var isAdmin = (ruolo === 'ADMIN' || ruolo === 'MINISTERO');
+    var myIstId = String(userCtx.istituzioneId);
+
+    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    var sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
+    var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+    
+    // 1. Lettura Anagrafica e Budget Base
+    var baseData = sheetBase ? sheetBase.getDataRange().getValues() : [];
+    var mapIstituzioni = {}; 
+    var listIstituzioni = [];
+    
+    for(var i=1; i<baseData.length; i++) {
+        var id = String(baseData[i][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim();
+        var nome = baseData[i][COL_MAP.BUDGET_BASE.DENOMINAZIONE];
+        var budgetBase = parseFloat(baseData[i][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
+        mapIstituzioni[id] = { nome: nome, budgetBase: budgetBase };
+        if(id !== myIstId) listIstituzioni.push({id: id, nome: nome});
+    }
+
+    // 2. Lettura Transazioni
+    var transData = sheetTrans ? sheetTrans.getDataRange().getValues() : [];
+    
+    if (isAdmin) {
+        // --- LOGICA REPORTISTICA MINISTERO ---
+        var report = {};
+        for (var idIst in mapIstituzioni) {
+            report[idIst] = { id: idIst, nome: mapIstituzioni[idIst].nome, budgetBase: mapIstituzioni[idIst].budgetBase, valoreScambio: 0, residuo: mapIstituzioni[idIst].budgetBase, transazioni: [] };
+        }
+        
+        for (var t=1; t<transData.length; t++) {
+            var reqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+            var cedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+            var stato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+            var rawJson = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
+            
+            var payload = {};
+            try { payload = JSON.parse(rawJson); } catch(e){}
+            var importo = parseFloat(payload.importo_richiesto) || 0;
+            var histDate = (payload.history && payload.history.length > 0) ? payload.history[0].timestamp : "";
+            var dataFormattata = histDate ? Utilities.formatDate(new Date(histDate), "Europe/Rome", "dd/MM/yyyy") : "";
+            
+            var baseTrans = { id: transData[t][0], data: dataFormattata, importo: importo, stato: stato };
+            
+            if (stato === 'ACCETTATA') {
+                if (report[reqId]) {
+                    report[reqId].valoreScambio += importo; 
+                    report[reqId].residuo += importo;
+                    report[reqId].transazioni.push(Object.assign({}, baseTrans, {tipo: "ACQUISITO (Da " + (mapIstituzioni[cedId]?mapIstituzioni[cedId].nome:cedId) + ")"}));
+                }
+                if (report[cedId]) {
+                    report[cedId].valoreScambio -= importo; 
+                    report[cedId].residuo -= importo;
+                    report[cedId].transazioni.push(Object.assign({}, baseTrans, {tipo: "CEDUTO (A " + (mapIstituzioni[reqId]?mapIstituzioni[reqId].nome:reqId) + ")"}));
+                }
+            } else {
+                 if (report[reqId]) report[reqId].transazioni.push(Object.assign({}, baseTrans, {tipo: "RICHIESTA INVIATA (A " + (mapIstituzioni[cedId]?mapIstituzioni[cedId].nome:cedId) + ")"}));
+                 if (report[cedId]) report[cedId].transazioni.push(Object.assign({}, baseTrans, {tipo: "RICHIESTA RICEVUTA (Da " + (mapIstituzioni[reqId]?mapIstituzioni[reqId].nome:reqId) + ")"}));
+            }
+        }
+        
+        var finalReport = Object.keys(report).map(function(k){ return report[k]; });
+        finalReport.sort(function(a,b) { return a.nome.localeCompare(b.nome); });
+        
+        return { success: true, isAdmin: true, report: finalReport };
+        
+    } else {
+        // --- LOGICA DASHBOARD ISTITUZIONE ---
+        var myBudgetBase = mapIstituzioni[myIstId] ? mapIstituzioni[myIstId].budgetBase : 0;
+        var entrate = 0; var uscitePendenza = 0; var usciteAccettate = 0;
+        var myTrans = [];
+        
+        for (var t=1; t<transData.length; t++) {
+            var reqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+            var cedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+            
+            if (reqId === myIstId || cedId === myIstId) {
+                var stato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+                var rawJson = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
+                
+                var payload = {};
+                try { payload = JSON.parse(rawJson); } catch(e){}
+                var importo = parseFloat(payload.importo_richiesto) || 0;
+                var histDate = (payload.history && payload.history.length > 0) ? payload.history[0].timestamp : "";
+                var dataFormattata = histDate ? Utilities.formatDate(new Date(histDate), "Europe/Rome", "dd/MM/yyyy") : "";
+                
+                var isRichiedente = (reqId === myIstId);
+                var partnerId = isRichiedente ? cedId : reqId;
+                var partnerNome = mapIstituzioni[partnerId] ? mapIstituzioni[partnerId].nome : partnerId;
+                
+                if (isRichiedente && stato === 'ACCETTATA') entrate += importo;
+                if (!isRichiedente && stato === 'ACCETTATA') usciteAccettate += importo;
+                if (!isRichiedente && (stato === 'INVIATA' || stato === 'IN_INTEGRAZIONE')) uscitePendenza += importo;
+                
+                myTrans.push({
+                    id: transData[t][COL_MAP.BUDGET_TRANS.ID_TRANS], data: dataFormattata,
+                    tipo: isRichiedente ? 'INVIATA' : 'RICEVUTA',
+                    partner: partnerNome, importo: importo, stato: stato
+                });
+            }
+        }
+        
+        return {
+            success: true, isAdmin: false,
+            stats: { saldoIniziale: myBudgetBase, entrateAccettate: entrate, uscitePendenti: (usciteAccettate + uscitePendenza), saldoDisponibile: (myBudgetBase + entrate - usciteAccettate - uscitePendenza) },
+            transazioni: myTrans, istituzioni: listIstituzioni
+        };
+    }
+  } catch (e) { return { success: false, message: e.message }; }
+}
+
+/**
+ * API RPC (Admin): Cambia lo stato del Master Switch.
+ */
+function toggleScambioBudget(token, newState) {
+    try {
+        var userCtx = verifySessionAndGetUser(token);
+        if (String(userCtx.ruolo).toUpperCase() !== 'ADMIN' && String(userCtx.ruolo).toUpperCase() !== 'MINISTERO') {
+            throw new Error("Non autorizzato.");
+        }
+        
+        var props = PropertiesService.getScriptProperties();
+        // Converte in stringa 'TRUE' o 'FALSE'
+        props.setProperty('SCAMBIO_BUDGET_ATTIVO', newState ? 'TRUE' : 'FALSE');
+        
+        return { success: true, message: newState ? "Modulo ATTIVATO." : "Modulo DISATTIVATO." };
+    } catch(e) {
+        return { success: false, message: e.message };
+    }
 }

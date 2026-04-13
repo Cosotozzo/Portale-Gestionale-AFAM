@@ -4,49 +4,93 @@
  * Architettura: ES6, Async Pattern con google.script.run
  */
 
-document.addEventListener("DOMContentLoaded", () => {
-    // Inizializza il modulo se il container esiste nella vista corrente
-    if(document.getElementById('scambio-budget-container')) {
-        initBudgetModulo();
-    }
-});
+// document.addEventListener("DOMContentLoaded", () => {
+//    if(document.getElementById('scambio-budget-container')) {
+//        initBudgetModulo();
+//    }
+// });
 
 const initBudgetModulo = () => {
     loadDashboardData();
 };
 
 // ==========================================
-// 1. LETTURA DATI (READ)
+// 1. LETTURA DATI (READ) E INIT DASHBOARD
 // ==========================================
 const loadDashboardData = () => {
-    // Feedback visivo: attivato di default nell'HTML (spinner nella tabella)
-    
-    google.script.run
+
+google.script.run
         .withSuccessHandler(handleDashboardDataSuccess)
         .withFailureHandler(handleRpcError)
-        .getBudgetDashboardData(); // API RPC da sviluppare in Code.gs
+        .getBudgetDashboardData(currentUser.token); 
 };
 
+let currentMinisteroReport = []; // Cache per la modale
+
 const handleDashboardDataSuccess = (response) => {
+    if (!response.success) { showToast(response.message, "danger"); return; }
+    
     try {
-        const { stats, transazioni, istituzioni } = response;
+        if (response.isAdmin) {
+            // RENDERING MINISTERO
+            document.getElementById('istituzione-budget-container').classList.add('hidden');
+            document.getElementById('ministero-budget-container').classList.remove('hidden');
+            
+            currentMinisteroReport = response.report;
+            renderMinisteroTable(currentMinisteroReport);
+            
+        } else {
+            // RENDERING ISTITUZIONE
+            document.getElementById('ministero-budget-container').classList.add('hidden');
+            document.getElementById('istituzione-budget-container').classList.remove('hidden');
+            
+            const { stats, transazioni, istituzioni } = response;
+
+            document.getElementById('stat-saldo-iniziale').innerText = formatCurrency(stats.saldoIniziale);
+            document.getElementById('stat-entrate').innerText = formatCurrency(stats.entrateAccettate);
+            document.getElementById('stat-uscite-pendenza').innerText = formatCurrency(stats.uscitePendenti);
+            document.getElementById('stat-saldo-disponibile').innerText = formatCurrency(stats.saldoDisponibile);
+        }
         
-        // 1. Aggiorna KPI con i 4 parametri derivanti dal calcolo dinamico server-side
-        document.getElementById('stat-saldo-iniziale').innerText = formatCurrency(stats.saldoIniziale);
-        document.getElementById('stat-entrate').innerText = formatCurrency(stats.entrateAccettate);
-        document.getElementById('stat-uscite-pendenza').innerText = formatCurrency(stats.uscitePendenti);
-        document.getElementById('stat-saldo-disponibile').innerText = formatCurrency(stats.saldoDisponibile);
-        
-        // 2. Popola Tabella
         renderTableBudget(transazioni);
-        
-        // 3. Popola Select Modale
         populateSelectCedenti(istituzioni);
         
     } catch (error) {
         console.error("Errore nel parsing dei dati della dashboard:", error);
         showToast("Errore di rendering dati", "danger");
     }
+};
+
+/**
+ * Gestisce il click sul Master Switch (Solo Admin)
+ */
+const handleMasterSwitchChange = (element) => {
+    const newState = element.checked;
+    element.disabled = true; // Blocco UI temporaneo
+    const label = document.getElementById('masterSwitchLabel');
+    label.innerText = "Salvataggio...";
+
+    const token = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.token : null;
+
+    google.script.run
+        .withSuccessHandler((res) => {
+            element.disabled = false;
+            if(res.success) {
+                showToast(res.message, "success");
+                label.innerText = newState ? "MODULO ATTIVO" : "MODULO DISATTIVATO";
+                label.className = newState ? "custom-control-label font-weight-bold text-success" : "custom-control-label font-weight-bold text-danger";
+            } else {
+                element.checked = !newState; // Revert
+                showToast(res.message, "danger");
+                label.innerText = "Errore";
+            }
+        })
+        .withFailureHandler((err) => {
+            element.disabled = false;
+            element.checked = !newState; // Revert
+            handleRpcError(err);
+        })
+        .toggleScambioBudget(token, newState);
 };
 
 const renderTableBudget = (transazioni) => {
@@ -73,11 +117,70 @@ const renderTableBudget = (transazioni) => {
     tbody.innerHTML = rowsHtml;
 };
 
+// INIZIO MODIFICA
+// ==========================================
+// RENDERING MINISTERO
+// ==========================================
+const renderMinisteroTable = (report) => {
+    const tbody = document.getElementById('tbodyMinisteroBudget');
+    if (!report || report.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-muted">Nessun dato disponibile.</td></tr>`;
+        return;
+    }
+    
+    tbody.innerHTML = report.map(r => {
+        let coloreScambio = "text-muted";
+        let sign = "";
+        if (r.valoreScambio > 0) { coloreScambio = "text-success fw-bold"; sign = "+"; }
+        else if (r.valoreScambio < 0) { coloreScambio = "text-danger fw-bold"; }
+        
+        return `
+        <tr style="cursor:pointer;" onclick="openDettaglioMinistero('${r.id}')" title="Clicca per visualizzare i dettagli">
+            <td class="fw-bold text-primary">${r.nome}</td>
+            <td class="text-end">${formatCurrency(r.budgetBase)}</td>
+            <td class="text-end ${coloreScambio}">${sign}${formatCurrency(r.valoreScambio)}</td>
+            <td class="text-end fw-bold">${formatCurrency(r.residuo)}</td>
+        </tr>
+    `}).join('');
+};
+
+const filterMinisteroBudget = () => {
+    const val = document.getElementById('searchMinisteroTable').value.toLowerCase();
+    const rows = document.querySelectorAll('#tbodyMinisteroBudget tr');
+    rows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(val) ? "" : "none";
+    });
+};
+
+const openDettaglioMinistero = (idIst) => {
+    const istData = currentMinisteroReport.find(r => r.id === idIst);
+    if (!istData) return;
+    
+    document.getElementById('modalDettagliTitle').innerText = `Movimentazioni: ${istData.nome}`;
+    const tbody = document.getElementById('tbodyDettagliTransazioni');
+    
+    if (!istData.transazioni || istData.transazioni.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center py-3 text-muted">Nessuna transazione registrata.</td></tr>`;
+    } else {
+        tbody.innerHTML = istData.transazioni.map(t => `
+            <tr>
+                <td class="small text-muted">${t.data}</td>
+                <td class="small fw-bold">${t.tipo}</td>
+                <td>${getStatoBadge(t.stato)}</td>
+                <td class="text-end fw-bold">€ ${t.importo.toFixed(2)}</td>
+            </tr>
+        `).join('');
+    }
+    
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDettagliMinistero'));
+    modal.show();
+};
+
 // ==========================================
 // 2. SCRITTURA DATI (WRITE)
 // ==========================================
 const openNuovaRichiestaModal = () => {
-    // Reset form e mostra modale (usa le API di Bootstrap Italia / Bootstrap 5)
     document.getElementById('formRichiestaBudget').reset();
     const modalEl = document.getElementById('modalRichiestaBudget');
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -93,7 +196,7 @@ const submitRichiestaBudget = () => {
         return;
     }
 
-    // Costruzione Payload (Sanitizzazione base)
+    // Costruzione Payload
     const payload = {
         cedenteId: document.getElementById('selectCedente').value,
         importo: parseFloat(document.getElementById('inputImporto').value).toFixed(2),
@@ -109,7 +212,7 @@ const submitRichiestaBudget = () => {
     btnSubmit.disabled = true;
     btnSubmit.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Invio...`;
 
-    google.script.run
+google.script.run
         .withSuccessHandler((res) => {
             const modal = bootstrap.Modal.getInstance(document.getElementById('modalRichiestaBudget'));
             modal.hide();
@@ -118,11 +221,10 @@ const submitRichiestaBudget = () => {
         })
         .withFailureHandler((err) => {
             handleRpcError(err);
-            // Unlock UI
             btnSubmit.disabled = false;
             btnSubmit.innerHTML = `Invia Richiesta Ufficiale`;
         })
-        .submitBudgetRequest(payload); // API RPC da sviluppare in Code.gs
+        .submitBudgetRequest(currentUser.token, payload); 
 };
 
 // ==========================================
@@ -130,11 +232,14 @@ const submitRichiestaBudget = () => {
 // ==========================================
 const populateSelectCedenti = (istituzioni) => {
     const select = document.getElementById('selectCedente');
-    // Mantiene solo l'opzione placeholder
+    if(!select) return;
+    
     select.innerHTML = `<option value="" selected disabled>Seleziona un'istituzione...</option>`;
-    istituzioni.forEach(ist => {
-        select.innerHTML += `<option value="${ist.id}">${ist.nome}</option>`;
-    });
+    if(istituzioni) {
+        istituzioni.forEach(ist => {
+            select.innerHTML += `<option value="${ist.id}">${ist.nome}</option>`;
+        });
+    }
 };
 
 const formatCurrency = (amount) => {
@@ -157,16 +262,13 @@ const getStatoBadge = (stato) => {
 const generateAzioniHtml = (transazione) => {
     let html = '';
     
-    // Logica se l'utente loggato è il CEDENTE (Partner riceve)
     if (transazione.tipo === 'RICEVUTA') {
         if (transazione.stato === 'INVIATA' || transazione.stato === 'BOZZA_CEDENTE') {
             html += `<button class="btn btn-sm btn-success mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ACCETTA')">Accetta</button>`;
             html += `<button class="btn btn-sm btn-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'RIFIUTA')">Rifiuta</button>`;
             html += `<button class="btn btn-sm btn-warning mx-1" onclick="gestisciRichiesta('${transazione.id}', 'IN_INTEGRAZIONE')">Chiedi Integ.</button>`;
         }
-    } 
-    // Logica se l'utente loggato è il RICHIEDENTE (Invia richiesta)
-    else if (transazione.tipo === 'INVIATA') {
+    } else if (transazione.tipo === 'INVIATA') {
         if (transazione.stato === 'BOZZA_RICHIEDENTE') {
             html += `<button class="btn btn-sm btn-primary mx-1" onclick="gestisciRichiesta('${transazione.id}', 'INVIA')">Invia Definitivo</button>`;
             html += `<button class="btn btn-sm btn-outline-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ELIMINA_BOZZA')">Elimina</button>`;
@@ -183,7 +285,6 @@ const handleRpcError = (error) => {
     showToast(error.message || "Si è verificato un errore di rete.", "danger");
 };
 
-// Fallback Toast se non presente nel framework globale
 const showToast = (message, type) => {
     if(typeof app !== 'undefined' && app.showToast) {
         app.showToast(message, type);

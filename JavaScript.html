@@ -467,6 +467,7 @@ function handleModuleAccess(key) {
       if (userRole === 'ADMIN' || userRole === 'MINISTERO') {
           // NOTA: Sostituisci 'view-ScambioBudgetOrganico' con l'ID reale del DIV della tua pagina
           showView('view-ScambioBudgetOrganico'); 
+          if(typeof initBudgetModulo === 'function') initBudgetModulo();
           return;
       }
       
@@ -477,6 +478,7 @@ function handleModuleAccess(key) {
               toggleLoading(false);
               if (isAttivo) {
                   showView('view-ScambioBudgetOrganico');
+                  if(typeof initBudgetModulo === 'function') initBudgetModulo();
               } else {
                   showToast("Funzionalità non ancora attivata dal Ministero.", "warning");
               }
