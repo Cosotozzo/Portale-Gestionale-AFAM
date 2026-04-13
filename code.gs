@@ -1078,9 +1078,12 @@ function getBudgetDashboardData(token) {
         
         var finalReport = Object.keys(report).map(function(k){ return report[k]; });
         finalReport.sort(function(a,b) { return a.nome.localeCompare(b.nome); });
+
+        var props = PropertiesService.getScriptProperties();
+        var isAttivo = props.getProperty('SCAMBIO_BUDGET_ATTIVO') === 'TRUE';
         
-        return { success: true, isAdmin: true, report: finalReport };
-        
+        return { success: true, isAdmin: true, report: finalReport, isAttivo: isAttivo };       
+
     } else {
         // --- LOGICA DASHBOARD ISTITUZIONE ---
         var myBudgetBase = mapIstituzioni[myIstId] ? mapIstituzioni[myIstId].budgetBase : 0;
@@ -1144,4 +1147,99 @@ function toggleScambioBudget(token, newState) {
     } catch(e) {
         return { success: false, message: e.message };
     }
+}
+
+/**
+ * API RPC: Permette al Ministero di annullare un'operazione precedentemente accettata.
+ * Calcola in tempo reale la capienza per prevenire scoperti in caso di annullamenti non sequenziali.
+ */
+function annullaTransazioneMinistero(token, idTrans) {
+  var lock = LockService.getScriptLock();
+  try {
+    var userCtx = verifySessionAndGetUser(token);
+    var ruolo = String(userCtx.ruolo).toUpperCase().trim();
+    if (ruolo !== 'ADMIN' && ruolo !== 'MINISTERO') throw new Error("Azione non consentita.");
+
+    if (!lock.tryLock(15000)) throw new Error("Il sistema è momentaneamente occupato. Riprovare.");
+
+    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+    var transData = sheetTrans.getDataRange().getValues();
+    
+    var targetRowIdx = -1;
+    var transazione = null;
+    
+    // Ricerca della transazione
+    for (var i = 1; i < transData.length; i++) {
+        if (String(transData[i][COL_MAP.BUDGET_TRANS.ID_TRANS]) === String(idTrans)) {
+            targetRowIdx = i + 1;
+            transazione = transData[i];
+            break;
+        }
+    }
+    
+    if (targetRowIdx === -1) throw new Error("Transazione non trovata.");
+    if (transazione[COL_MAP.BUDGET_TRANS.STATO] !== 'ACCETTATA') throw new Error("Solo le operazioni ACCETTATE possono essere riaperte.");
+    
+    var reqId = String(transazione[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+    var payloadRaw = transazione[COL_MAP.BUDGET_TRANS.JSON_BLOB];
+    var payload = JSON.parse(payloadRaw);
+    var importo = parseFloat(payload.importo_richiesto);
+    
+    // VALIDAZIONE SEQUENZIALE: Ricalcolo Saldo Attuale del Richiedente (Colui che ha ricevuto i fondi)
+    var sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
+    var baseData = sheetBase.getDataRange().getValues();
+    var reqBudgetBase = 0;
+    
+    for(var b = 1; b < baseData.length; b++) {
+        if(String(baseData[b][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === reqId) {
+            reqBudgetBase = parseFloat(baseData[b][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
+            break;
+        }
+    }
+    
+    var reqCurrentBalance = reqBudgetBase;
+    
+    for (var t = 1; t < transData.length; t++) {
+        if (transData[t][COL_MAP.BUDGET_TRANS.STATO] === 'ACCETTATA') {
+            var tReqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+            var tCedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+            var tPayload = JSON.parse(transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB]);
+            var tImporto = parseFloat(tPayload.importo_richiesto) || 0;
+            
+            if (tReqId === reqId) reqCurrentBalance += tImporto;
+            if (tCedId === reqId) reqCurrentBalance -= tImporto;
+        }
+    }
+    
+    // Check Critico: Se annullare questa operazione manda il ricevente sotto zero
+    if ((reqCurrentBalance - importo) < 0) {
+        Logger.log("[SECURITY] Annullamento bloccato per Scoperto di Bilancio. Istituzione ID: " + reqId);
+        throw new Error("La riapertura deve essere sequenziale dall'ultima operazione fino alla prima.");
+    }
+    
+    // Scrittura aggiornamento
+    var now = new Date().toISOString();
+    payload.history.push({
+        timestamp: now,
+        attore: userCtx.username,
+        ruolo_attore: ruolo,
+        azione: "ANNULLAMENTO_MINISTERO",
+        note: "Operazione annullata dal Ministero per riapertura termini."
+    });
+    
+    sheetTrans.getRange(targetRowIdx, COL_MAP.BUDGET_TRANS.STATO + 1).setValue("ANNULLATA_MINISTERO");
+    sheetTrans.getRange(targetRowIdx, COL_MAP.BUDGET_TRANS.JSON_BLOB + 1).setValue(JSON.stringify(payload));
+    
+    Logger.log("[AUDIT] Transazione " + idTrans + " annullata dal Ministero (" + userCtx.username + ")");
+    SpreadsheetApp.flush();
+    
+    return { success: true };
+    
+  } catch (e) {
+    Logger.log("Errore annullaTransazioneMinistero: " + e.message);
+    return { success: false, message: e.message };
+  } finally {
+    lock.releaseLock();
+  }
 }

@@ -36,6 +36,15 @@ const handleDashboardDataSuccess = (response) => {
             document.getElementById('istituzione-budget-container').classList.add('hidden');
             document.getElementById('ministero-budget-container').classList.remove('hidden');
             
+            // Setta lo stato dello switch Ministero
+            const switchEl = document.getElementById('masterSwitchMinistero');
+            const labelEl = document.getElementById('masterSwitchLabelMin');
+            if (switchEl && labelEl) {
+                switchEl.checked = response.isAttivo;
+                labelEl.innerText = response.isAttivo ? "ATTIVO" : "DISATTIVATO";
+                labelEl.className = response.isAttivo ? "custom-control-label font-weight-bold text-success" : "custom-control-label font-weight-bold text-danger";
+            }
+
             currentMinisteroReport = response.report;
             renderMinisteroTable(currentMinisteroReport);
             
@@ -160,8 +169,8 @@ const openDettaglioMinistero = (idIst) => {
     document.getElementById('modalDettagliTitle').innerText = `Movimentazioni: ${istData.nome}`;
     const tbody = document.getElementById('tbodyDettagliTransazioni');
     
-    if (!istData.transazioni || istData.transazioni.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="4" class="text-center py-3 text-muted">Nessuna transazione registrata.</td></tr>`;
+if (!istData.transazioni || istData.transazioni.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted">Nessuna transazione registrata.</td></tr>`;
     } else {
         tbody.innerHTML = istData.transazioni.map(t => `
             <tr>
@@ -169,12 +178,39 @@ const openDettaglioMinistero = (idIst) => {
                 <td class="small fw-bold">${t.tipo}</td>
                 <td>${getStatoBadge(t.stato)}</td>
                 <td class="text-end fw-bold">€ ${t.importo.toFixed(2)}</td>
+                <td class="text-center">
+                    ${t.stato === 'ACCETTATA' ? `<button class="btn btn-sm btn-outline-danger" onclick="annullaOperazioneMinistero('${t.id}')" title="Riapri Scambio"><i class="fas fa-undo"></i></button>` : '-'}
+                </td>
             </tr>
         `).join('');
     }
     
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDettagliMinistero'));
     modal.show();
+};
+
+const annullaOperazioneMinistero = (idTrans) => {
+    if(!confirm("ATTENZIONE: Stai per annullare definitivamente questo scambio e riaprire l'operazione. Confermi?")) return;
+    
+    if(typeof toggleLoading === 'function') toggleLoading(true);
+    
+    google.script.run
+        .withSuccessHandler((res) => {
+            if(typeof toggleLoading === 'function') toggleLoading(false);
+            if(res.success) {
+                showToast("Operazione riaperta e annullata con successo.", "success");
+                const modal = bootstrap.Modal.getInstance(document.getElementById('modalDettagliMinistero'));
+                if(modal) modal.hide();
+                loadDashboardData(); 
+            } else {
+                showToast(res.message, "danger");
+            }
+        })
+        .withFailureHandler((err) => {
+            if(typeof toggleLoading === 'function') toggleLoading(false);
+            handleRpcError(err);
+        })
+        .annullaTransazioneMinistero(currentUser.token, idTrans);
 };
 
 // ==========================================
