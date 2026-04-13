@@ -138,7 +138,8 @@ function updateUserInterface(user) {
       const adminCard = document.getElementById('module-card-users');
 // INIZIO MODIFICA
       if(adminCard) {
-          if (user.role && String(user.role).toUpperCase() === 'ADMIN') {
+          const userRole = user.role ? String(user.role).toUpperCase().trim() : '';
+          if (userRole === 'ADMIN' || userRole === 'MINISTERO') {
               adminCard.classList.remove('hidden');
           } else {
               adminCard.classList.add('hidden');
@@ -463,9 +464,8 @@ function handleModuleAccess(key) {
 
 function openBudgetOrganicoModule() {
       // 1. Bypass Admin e Ministero (Specifica Punto 6.1)
-      const userRole = String(currentUser.role).toUpperCase();
+      const userRole = currentUser.role ? String(currentUser.role).toUpperCase().trim() : '';
       if (userRole === 'ADMIN' || userRole === 'MINISTERO') {
-          // NOTA: Sostituisci 'view-ScambioBudgetOrganico' con l'ID reale del DIV della tua pagina
           showView('view-ScambioBudgetOrganico'); 
           if(typeof initBudgetModulo === 'function') initBudgetModulo();
           return;
