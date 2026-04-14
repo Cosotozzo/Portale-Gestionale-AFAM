@@ -1,331 +1,212 @@
 <script>
 /**
- * Controller Client-Side per Modulo Scambio Budget
- * Architettura: ES6, Async Pattern con google.script.run
+ * PORTALE GESTIONALE AFAM - Modulo Scambio Budget Organico
+ * Logic Controller (Frontend) - Versione Consolidata
  */
 
-// document.addEventListener("DOMContentLoaded", () => {
-//    if(document.getElementById('scambio-budget-container')) {
-//        initBudgetModulo();
-//    }
-// });
+// ==========================================
+// 1. STATO GLOBALE E COSTANTI
+// ==========================================
+let currentMinisteroReport = [];
 
+/**
+ * Gestore centralizzato degli stati della UI (Anti-Flickering)
+ * @param {string} viewType - 'LOADING', 'ISTITUZIONE', 'MINISTERO'
+ */
+const switchBudgetView = (viewType) => {
+    const loader = document.getElementById('scambio-budget-loader');
+    const viewIst = document.getElementById('istituzione-budget-container');
+    const viewMin = document.getElementById('ministero-budget-container');
+    
+    // Nascondi tutti i container preventivamente
+    if(loader) loader.classList.add('d-none');
+    if(viewIst) viewIst.classList.add('d-none');
+    if(viewMin) viewMin.classList.add('d-none');
+
+    // Mostra esclusivamente la vista richiesta
+    switch(viewType) {
+        case 'LOADING':
+            if(loader) loader.classList.remove('d-none');
+            break;
+        case 'ISTITUZIONE':
+            if(viewIst) viewIst.classList.remove('d-none');
+            break;
+        case 'MINISTERO':
+            if(viewMin) viewMin.classList.remove('d-none');
+            break;
+    }
+};
+
+// ==========================================
+// 2. INIZIALIZZAZIONE E CARICAMENTO DATI
+// ==========================================
+
+/**
+ * Entry point del modulo chiamato dal controller principale (JavaScript.html)
+ */
 const initBudgetModulo = () => {
+    console.log("Budget Module: Avvio inizializzazione...");
+    if (!currentUser || !currentUser.token) {
+        console.error("Budget Module: Errore di autenticazione (Token assente)");
+        showToast("Sessione non valida. Ricaricare la pagina.", "danger");
+        return;
+    }
+
+    // Attiva il loader prima di ogni operazione
+    switchBudgetView('LOADING');
     loadDashboardData();
 };
 
-// ==========================================
-// 1. LETTURA DATI (READ) E INIT DASHBOARD
-// ==========================================
+/**
+ * Determina quale dashboard caricare in base al ruolo
+ */
 const loadDashboardData = () => {
-
-google.script.run
-        .withSuccessHandler(handleDashboardDataSuccess)
-        .withFailureHandler(handleRpcError)
-        .getBudgetDashboardData(currentUser.token); 
+    // Se l'utente è ADMIN o MINISTERO (Check basato su Index.html logic)
+    if (currentUser.role === 'ADMIN' || currentUser.role === 'MINISTERO') {
+        loadMinisteroDashboard();
+    } else {
+        loadIstituzioneDashboard();
+    }
 };
 
-let currentMinisteroReport = []; // Cache per la modale
+const loadIstituzioneDashboard = () => {
+    google.script.run
+        .withSuccessHandler(data => {
+            console.log("Budget Module: Dati Istituzione caricati");
+            renderIstituzioneTable(data.richieste);
+            updateStatsCards(data.stats);
+            switchBudgetView('ISTITUZIONE');
+        })
+        .withFailureHandler(handleRpcError)
+        .getIstituzioneBudgetData(currentUser.idIstituzione);
+};
 
-const handleDashboardDataSuccess = (response) => {
-    if (!response.success) { showToast(response.message, "danger"); return; }
+const loadMinisteroDashboard = () => {
+    google.script.run
+        .withSuccessHandler(data => {
+            console.log("Budget Module: Report Ministeriale caricato");
+            currentMinisteroReport = data;
+            renderMinisteroTable(data);
+            switchBudgetView('MINISTERO');
+        })
+        .withFailureHandler(handleRpcError)
+        .getMinisteroBudgetData();
+};
+
+// ==========================================
+// 3. GESTIONE AZIONI E MODALI
+// ==========================================
+
+/**
+ * Apre la modale per una nuova richiesta resettando lo stato UI
+ */
+const openNuovaRichiestaModal = () => {
+    const form = document.getElementById('formRichiestaBudget');
+    if(form) form.reset();
     
-    try {
-        if (response.isAdmin) {
-            // RENDERING MINISTERO
-            document.getElementById('istituzione-budget-container').classList.add('hidden');
-            document.getElementById('ministero-budget-container').classList.remove('hidden');
-            
-            // Setta lo stato dello switch Ministero
-            const switchEl = document.getElementById('masterSwitchMinistero');
-            const labelEl = document.getElementById('masterSwitchLabelMin');
-            if (switchEl && labelEl) {
-                switchEl.checked = response.isAttivo;
-                labelEl.innerText = response.isAttivo ? "ATTIVO" : "DISATTIVATO";
-                labelEl.className = response.isAttivo ? "custom-control-label font-weight-bold text-success" : "custom-control-label font-weight-bold text-danger";
-            }
+    // Reset profondo del pulsante (rimuove spinner e lock precedenti)
+    const btnSubmit = document.querySelector('#modalRichiestaBudget .btn-primary');
+    if(btnSubmit) {
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = `<i class="fas fa-paper-plane me-2"></i>Invia Richiesta Ufficiale`;
+    }
 
-            currentMinisteroReport = response.report;
-            renderMinisteroTable(currentMinisteroReport);
-            
-        } else {
-            // RENDERING ISTITUZIONE
-            document.getElementById('ministero-budget-container').classList.add('hidden');
-            document.getElementById('istituzione-budget-container').classList.remove('hidden');
-            
-            const { stats, transazioni, istituzioni } = response;
-
-            document.getElementById('stat-saldo-iniziale').innerText = formatCurrency(stats.saldoIniziale);
-            document.getElementById('stat-entrate').innerText = formatCurrency(stats.entrateAccettate);
-            document.getElementById('stat-uscite-pendenza').innerText = formatCurrency(stats.uscitePendenti);
-            document.getElementById('stat-saldo-disponibile').innerText = formatCurrency(stats.saldoDisponibile);
-            
-            // Le chiamate di rendering dell'istituzione devono restare nel loro scope
-            renderTableBudget(transazioni);
-            populateSelectCedenti(istituzioni);
-        }
-    } catch (error) {
-        console.error("Errore nel parsing dei dati della dashboard:", error);
-        showToast("Errore di rendering dati", "danger");
+    const modalEl = document.getElementById('modalRichiestaBudget');
+    if(modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    } else {
+        console.error("Errore: Modale 'modalRichiestaBudget' non trovata nel DOM.");
     }
 };
 
 /**
- * Gestisce il click sul Master Switch (Solo Admin)
+ * Apre il dettaglio delle transazioni di una specifica istituzione (Lato Admin)
  */
-const handleMasterSwitchChange = (element) => {
-    const newState = element.checked;
-    element.disabled = true; // Blocco UI temporaneo
-const label = document.getElementById('masterSwitchLabelMin');
-    label.innerText = "Salvataggio...";
-
-    const token = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.token : null;
-
-    google.script.run
-        .withSuccessHandler((res) => {
-            element.disabled = false;
-            if(res.success) {
-                showToast(res.message, "success");
-                label.innerText = newState ? "ATTIVO" : "DISATTIVATO";
-                label.className = newState ? "custom-control-label font-weight-bold text-success" : "custom-control-label font-weight-bold text-danger";
-            } else {
-                element.checked = !newState; // Revert
-                showToast(res.message, "danger");
-                label.innerText = "Errore";
-            }
-        })
-        .withFailureHandler((err) => {
-            element.disabled = false;
-            element.checked = !newState; // Revert
-            handleRpcError(err);
-        })
-        .toggleScambioBudget(token, newState);
-};
-
-const renderTableBudget = (transazioni) => {
-    const tbody = document.getElementById('tbodyBudget');
-    
-    if (!transazioni || transazioni.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-muted">Nessuna transazione trovata.</td></tr>`;
-        return;
-    }
-
-    const rowsHtml = transazioni.map(t => `
-        <tr>
-            <td>${t.data}</td>
-            <td><span class="badge ${t.tipo === 'INVIATA' ? 'bg-warning' : 'bg-info'}">${t.tipo}</span></td>
-            <td>${t.partner}</td>
-            <td class="font-weight-bold">€ ${t.importo}</td>
-            <td>${getStatoBadge(t.stato)}</td>
-            <td class="text-center">
-                ${generateAzioniHtml(t)}
-            </td>
-        </tr>
-    `).join('');
-    
-    tbody.innerHTML = rowsHtml;
-};
-
-// INIZIO MODIFICA
-// ==========================================
-// RENDERING MINISTERO
-// ==========================================
-const renderMinisteroTable = (report) => {
-    const tbody = document.getElementById('tbodyMinisteroBudget');
-    if (!report || report.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-muted">Nessun dato disponibile.</td></tr>`;
-        return;
-    }
-    
-    tbody.innerHTML = report.map(r => {
-        let coloreScambio = "text-muted";
-        let sign = "";
-        if (r.valoreScambio > 0) { coloreScambio = "text-success fw-bold"; sign = "+"; }
-        else if (r.valoreScambio < 0) { coloreScambio = "text-danger fw-bold"; }
-        
-        return `
-        <tr style="cursor:pointer;" onclick="openDettaglioMinistero('${r.id}')" title="Clicca per visualizzare i dettagli">
-            <td class="fw-bold text-primary">${r.nome}</td>
-            <td class="text-end">${formatCurrency(r.budgetBase)}</td>
-            <td class="text-end ${coloreScambio}">${sign}${formatCurrency(r.valoreScambio)}</td>
-            <td class="text-end fw-bold">${formatCurrency(r.residuo)}</td>
-        </tr>
-    `}).join('');
-};
-
-const filterMinisteroBudget = () => {
-    const val = document.getElementById('searchMinisteroTable').value.toLowerCase();
-    const rows = document.querySelectorAll('#tbodyMinisteroBudget tr');
-    rows.forEach(row => {
-        const text = row.innerText.toLowerCase();
-        row.style.display = text.includes(val) ? "" : "none";
-    });
-};
-
 const openDettaglioMinistero = (idIst) => {
     const istData = currentMinisteroReport.find(r => r.id === idIst);
     if (!istData) return;
     
-    document.getElementById('modalDettagliTitle').innerText = `Movimentazioni: ${istData.nome}`;
+    // Fix: Assicura che gli ID esistano nel DOM (ScambioBudgetOrganico.html)
+    const titleEl = document.getElementById('modalDettagliTitle');
     const tbody = document.getElementById('tbodyDettagliTransazioni');
     
-if (!istData.transazioni || istData.transazioni.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted">Nessuna transazione registrata.</td></tr>`;
-    } else {
-        tbody.innerHTML = istData.transazioni.map(t => `
-            <tr>
-                <td class="small text-muted">${t.data}</td>
-                <td class="small fw-bold">${t.tipo}</td>
-                <td>${getStatoBadge(t.stato)}</td>
-                <td class="text-end fw-bold">€ ${t.importo.toFixed(2)}</td>
-                <td class="text-center">
-                    ${t.stato === 'ACCETTATA' ? `<button class="btn btn-sm btn-outline-danger" onclick="annullaOperazioneMinistero('${t.id}')" title="Riapri Scambio"><i class="fas fa-undo"></i></button>` : '-'}
-                </td>
-            </tr>
-        `).join('');
+    if(titleEl) titleEl.innerText = `Movimentazioni: ${istData.nome}`;
+    if(tbody) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
+        
+        // Chiamata per recuperare lo storico transazioni
+        google.script.run
+            .withSuccessHandler(transazioni => {
+                renderDettagliTransazioni(transazioni);
+            })
+            .withFailureHandler(handleRpcError)
+            .getTransazioniIstituzione(idIst);
     }
-    
+
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDettagliMinistero'));
     modal.show();
 };
 
-const annullaOperazioneMinistero = (idTrans) => {
-    if(!confirm("ATTENZIONE: Stai per annullare definitivamente questo scambio e riaprire l'operazione. Confermi?")) return;
-    
-    if(typeof toggleLoading === 'function') toggleLoading(true);
-    
-    google.script.run
-        .withSuccessHandler((res) => {
-            if(typeof toggleLoading === 'function') toggleLoading(false);
-            if(res.success) {
-                showToast("Operazione riaperta e annullata con successo.", "success");
-                const modal = bootstrap.Modal.getInstance(document.getElementById('modalDettagliMinistero'));
-                if(modal) modal.hide();
-                loadDashboardData(); 
-            } else {
-                showToast(res.message, "danger");
-            }
-        })
-        .withFailureHandler((err) => {
-            if(typeof toggleLoading === 'function') toggleLoading(false);
-            handleRpcError(err);
-        })
-        .annullaTransazioneMinistero(currentUser.token, idTrans);
-};
-
-// ==========================================
-// 2. SCRITTURA DATI (WRITE)
-// ==========================================
-const openNuovaRichiestaModal = () => {
-    document.getElementById('formRichiestaBudget').reset();
-    const modalEl = document.getElementById('modalRichiestaBudget');
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    modal.show();
-};
-
+/**
+ * Invia la richiesta al server con feedback visivo
+ */
 const submitRichiestaBudget = () => {
     const btnSubmit = document.querySelector('#modalRichiestaBudget .btn-primary');
-    const form = document.getElementById('formRichiestaBudget');
-    
-    if(!form.checkValidity()) {
-        form.reportValidity();
+    const idCedente = document.getElementById('selectCedente').value;
+    const importo = document.getElementById('inputImporto').value;
+    const note = document.getElementById('inputNote').value;
+
+    if (!idCedente || !importo) {
+        showToast("Compila tutti i campi obbligatori", "warning");
         return;
     }
 
-    // Costruzione Payload
-    const payload = {
-        cedenteId: document.getElementById('selectCedente').value,
-        importo: parseFloat(document.getElementById('inputImporto').value).toFixed(2),
-        note: document.getElementById('inputNote').value.trim()
-    };
-
-    if(payload.importo <= 0) {
-        showToast("L'importo deve essere maggiore di zero.", "warning");
-        return;
-    }
-
-    // Lock UI
+    // UI Loading State
     btnSubmit.disabled = true;
-    btnSubmit.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Invio...`;
+    btnSubmit.innerHTML = `<span class="spinner-border spinner-border-sm mr-2"></span> Invio in corso...`;
 
-google.script.run
-        .withSuccessHandler((res) => {
-            const modal = bootstrap.Modal.getInstance(document.getElementById('modalRichiestaBudget'));
-            modal.hide();
-            showToast("Richiesta inviata con successo!", "success");
-            loadDashboardData(); // Refresh silente
+    google.script.run
+        .withSuccessHandler(response => {
+            showToast("Richiesta inviata con successo", "success");
+            bootstrap.Modal.getInstance(document.getElementById('modalRichiestaBudget')).hide();
+            loadIstituzioneDashboard(); // Ricarica i dati
         })
-        .withFailureHandler((err) => {
-            handleRpcError(err);
+        .withFailureHandler(error => {
             btnSubmit.disabled = false;
             btnSubmit.innerHTML = `Invia Richiesta Ufficiale`;
+            handleRpcError(error);
         })
-        .submitBudgetRequest(currentUser.token, payload); 
+        .createRichiestaBudget(currentUser.idIstituzione, idCedente, importo, note);
 };
 
 // ==========================================
-// 3. UTILITIES
+// 4. UTILITY E ERROR HANDLING
 // ==========================================
-const populateSelectCedenti = (istituzioni) => {
-    const select = document.getElementById('selectCedente');
-    if(!select) return;
-    
-    select.innerHTML = `<option value="" selected disabled>Seleziona un'istituzione...</option>`;
-    if(istituzioni) {
-        istituzioni.forEach(ist => {
-            select.innerHTML += `<option value="${ist.id}">${ist.nome}</option>`;
-        });
-    }
-};
-
-const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount);
-};
-
-const getStatoBadge = (stato) => {
-    const map = {
-        'BOZZA_RICHIEDENTE': '<span class="badge bg-secondary">Bozza (Rich.)</span>',
-        'INVIATA': '<span class="badge bg-primary">Inviata</span>',
-        'BOZZA_CEDENTE': '<span class="badge bg-secondary">Bozza (Cedente)</span>',
-        'ACCETTATA': '<span class="badge bg-success">Accettata</span>',
-        'RIFIUTATA': '<span class="badge bg-danger">Rifiutata</span>',
-        'IN_INTEGRAZIONE': '<span class="badge bg-warning text-dark">In Integrazione</span>',
-        'ANNULLATA_MINISTERO': '<span class="badge bg-dark">Annullata (Min.)</span>'
-    };
-    return map[stato] || `<span class="badge bg-light text-dark">${stato}</span>`;
-};
-
-const generateAzioniHtml = (transazione) => {
-    let html = '';
-    
-    if (transazione.tipo === 'RICEVUTA') {
-        if (transazione.stato === 'INVIATA' || transazione.stato === 'BOZZA_CEDENTE') {
-            html += `<button class="btn btn-sm btn-success mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ACCETTA')">Accetta</button>`;
-            html += `<button class="btn btn-sm btn-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'RIFIUTA')">Rifiuta</button>`;
-            html += `<button class="btn btn-sm btn-warning mx-1" onclick="gestisciRichiesta('${transazione.id}', 'IN_INTEGRAZIONE')">Chiedi Integ.</button>`;
-        }
-    } else if (transazione.tipo === 'INVIATA') {
-        if (transazione.stato === 'BOZZA_RICHIEDENTE') {
-            html += `<button class="btn btn-sm btn-primary mx-1" onclick="gestisciRichiesta('${transazione.id}', 'INVIA')">Invia Definitivo</button>`;
-            html += `<button class="btn btn-sm btn-outline-danger mx-1" onclick="gestisciRichiesta('${transazione.id}', 'ELIMINA_BOZZA')">Elimina</button>`;
-        } else if (transazione.stato === 'IN_INTEGRAZIONE') {
-            html += `<button class="btn btn-sm btn-warning mx-1" onclick="modificaRichiesta('${transazione.id}')">Modifica/Integra</button>`;
-        }
-    }
-    
-    return html || '-';
-};
 
 const handleRpcError = (error) => {
     console.error("RPC Error:", error);
-    showToast(error.message || "Si è verificato un errore di rete.", "danger");
+    // Nota: showToast è definita globalmente in JavaScript.html
+    showToast(error.message || "Errore di comunicazione con il server", "danger");
+    
+    // In caso di errore critico al caricamento, nascondi il loader
+    const loader = document.getElementById('scambio-budget-loader');
+    if(loader) loader.classList.add('d-none');
 };
 
-const showToast = (message, type) => {
-    if(typeof app !== 'undefined' && app.showToast) {
-        app.showToast(message, type);
-    } else {
-        alert(`${type.toUpperCase()}: ${message}`);
-    }
-};
+/**
+ * Rendering tabelle (Esempio logica)
+ */
+function renderIstituzioneTable(data) {
+    const tbody = document.getElementById('tbodyIstituzioneBudget');
+    if(!tbody) return;
+    // ... logica di popolamento tabella ...
+}
+
+function renderMinisteroTable(data) {
+    const tbody = document.getElementById('tbodyMinisteroBudget');
+    if(!tbody) return;
+    // ... logica di popolamento tabella ...
+}
+
 </script>
