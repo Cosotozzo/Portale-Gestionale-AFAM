@@ -102,9 +102,12 @@
                     <form id="formRichiestaBudget" onsubmit="event.preventDefault();">
                         <div class="mb-3">
                             <label class="form-label fw-bold text-muted small">ISTITUZIONE CEDENTE</label>
-                            <select class="form-select" id="selectCedente" required>
-                                <option value="" selected disabled>Seleziona Istituzione...</option>
-                            </select>
+                            <div class="form-group">
+                              <label for="cedenteInput">Istituzione Cedente</label>
+                              <input type="text" id="cedenteInput" class="form-control" list="listaIstituzioni" placeholder="Inizia a scrivere il nome dell'istituzione...">
+                              <datalist id="listaIstituzioni">
+                                </datalist>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold text-muted small">IMPORTO RICHIESTO (€)</label>

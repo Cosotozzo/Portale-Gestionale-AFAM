@@ -1017,7 +1017,7 @@ function getBudgetDashboardData(token) {
     var ruolo = String(userCtx.ruolo).toUpperCase().trim();
     var isAdmin = (ruolo === 'ADMIN' || ruolo === 'MINISTERO');
     var myIstId = String(userCtx.istituzioneId);
-
+    
     var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
     var sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
     var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
@@ -1042,7 +1042,14 @@ function getBudgetDashboardData(token) {
         // --- LOGICA REPORTISTICA MINISTERO ---
         var report = {};
         for (var idIst in mapIstituzioni) {
-            report[idIst] = { id: idIst, nome: mapIstituzioni[idIst].nome, budgetBase: mapIstituzioni[idIst].budgetBase, valoreScambio: 0, residuo: mapIstituzioni[idIst].budgetBase, transazioni: [] };
+            report[idIst] = { 
+                id: idIst, 
+                nome: mapIstituzioni[idIst].nome, 
+                budgetBase: mapIstituzioni[idIst].budgetBase, 
+                valoreScambio: 0, 
+                residuo: mapIstituzioni[idIst].budgetBase, 
+                transazioni: [] 
+            };
         }
         
         for (var t=1; t<transData.length; t++) {
@@ -1061,12 +1068,12 @@ function getBudgetDashboardData(token) {
             
             if (stato === 'ACCETTATA') {
                 if (report[reqId]) {
-                    report[reqId].valoreScambio += importo; 
+                    report[reqId].valoreScambio += importo;
                     report[reqId].residuo += importo;
                     report[reqId].transazioni.push(Object.assign({}, baseTrans, {tipo: "ACQUISITO (Da " + (mapIstituzioni[cedId]?mapIstituzioni[cedId].nome:cedId) + ")"}));
                 }
                 if (report[cedId]) {
-                    report[cedId].valoreScambio -= importo; 
+                    report[cedId].valoreScambio -= importo;
                     report[cedId].residuo -= importo;
                     report[cedId].transazioni.push(Object.assign({}, baseTrans, {tipo: "CEDUTO (A " + (mapIstituzioni[reqId]?mapIstituzioni[reqId].nome:reqId) + ")"}));
                 }
@@ -1082,8 +1089,8 @@ function getBudgetDashboardData(token) {
         var props = PropertiesService.getScriptProperties();
         var isAttivo = props.getProperty('SCAMBIO_BUDGET_ATTIVO') === 'TRUE';
         
-        return { success: true, isAdmin: true, report: finalReport, isAttivo: isAttivo };       
-
+        return { success: true, isAdmin: true, report: finalReport, isAttivo: isAttivo };
+        
     } else {
         // --- LOGICA DASHBOARD ISTITUZIONE ---
         var myBudgetBase = mapIstituzioni[myIstId] ? mapIstituzioni[myIstId].budgetBase : 0;
@@ -1121,12 +1128,21 @@ function getBudgetDashboardData(token) {
         }
         
         return {
-            success: true, isAdmin: false,
-            stats: { saldoIniziale: myBudgetBase, entrateAccettate: entrate, uscitePendenti: (usciteAccettate + uscitePendenza), saldoDisponibile: (myBudgetBase + entrate - usciteAccettate - uscitePendenza) },
-            transazioni: myTrans, istituzioni: listIstituzioni
+            success: true, 
+            isAdmin: false,
+            stats: { 
+                saldoIniziale: myBudgetBase, 
+                entrateAccettate: entrate, 
+                uscitePendenti: (usciteAccettate + uscitePendenza), 
+                saldoDisponibile: (myBudgetBase + entrate - usciteAccettate - uscitePendenza) 
+            },
+            transazioni: myTrans, 
+            istituzioni: listIstituzioni
         };
     }
-  } catch (e) { return { success: false, message: e.message }; }
+  } catch (e) { 
+    return { success: false, message: "Errore Dashboard: " + e.message };
+  }
 }
 
 /**
