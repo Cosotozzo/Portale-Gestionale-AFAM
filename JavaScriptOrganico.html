@@ -70,27 +70,44 @@ const loadDashboardData = () => {
 };
 
 const loadIstituzioneDashboard = () => {
-    google.script.run
-        .withSuccessHandler(data => {
+google.script.run
+        .withSuccessHandler(response => {
+            if (!response.success) {
+                handleRpcError(new Error(response.message));
+                return;
+            }
             console.log("Budget Module: Dati Istituzione caricati");
-            renderIstituzioneTable(data.richieste);
-            updateStatsCards(data.stats);
+            renderIstituzioneTable(response.transazioni);
+            updateStatsCards(response.stats);
             switchBudgetView('ISTITUZIONE');
         })
         .withFailureHandler(handleRpcError)
-        .getIstituzioneBudgetData(currentUser.idIstituzione);
+        .getBudgetDashboardData(currentUser.token);
 };
 
 const loadMinisteroDashboard = () => {
-    google.script.run
-        .withSuccessHandler(data => {
+google.script.run
+        .withSuccessHandler(response => {
+            if (!response.success) {
+                handleRpcError(new Error(response.message));
+                return;
+            }
             console.log("Budget Module: Report Ministeriale caricato");
-            currentMinisteroReport = data;
-            renderMinisteroTable(data);
+            currentMinisteroReport = response.report;
+            renderMinisteroTable(response.report);
+            
+            // Gestione Master Switch basato sulla risposta
+            const masterSwitch = document.getElementById('masterSwitchBudget');
+            const switchLabel = document.getElementById('masterSwitchLabel');
+            if (masterSwitch && switchLabel) {
+                masterSwitch.checked = response.isAttivo;
+                switchLabel.innerText = response.isAttivo ? "MODULO ATTIVO" : "MODULO DISATTIVATO";
+            }
+            
             switchBudgetView('MINISTERO');
         })
         .withFailureHandler(handleRpcError)
-        .getMinisteroBudgetData();
+        .getBudgetDashboardData(currentUser.token);
 };
 
 // ==========================================
@@ -207,6 +224,20 @@ function renderMinisteroTable(data) {
     const tbody = document.getElementById('tbodyMinisteroBudget');
     if(!tbody) return;
     // ... logica di popolamento tabella ...
+}
+
+function updateStatsCards(stats) {
+    if (!stats) return;
+    
+    const formatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+    
+    const elBudgetDisp = document.getElementById('stat-budget-disponibile');
+    const elRichiesteAttive = document.getElementById('stat-richieste-attive');
+    const elScambiConclusi = document.getElementById('stat-scambi-conclusi');
+    
+    if (elBudgetDisp) elBudgetDisp.innerText = formatter.format(stats.saldoDisponibile);
+    if (elRichiesteAttive) elRichiesteAttive.innerText = formatter.format(stats.uscitePendenti);
+    if (elScambiConclusi) elScambiConclusi.innerText = formatter.format(stats.entrateAccettate);
 }
 
 </script>
