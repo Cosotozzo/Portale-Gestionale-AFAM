@@ -8,11 +8,11 @@
 window.listaIstituzioniGlobal = [];
 
 /**
- * Inizializzazione al caricamento
+ * Inizializzazione chiamata dal file JavaScript.html quando si apre il modulo
  */
-document.addEventListener('DOMContentLoaded', function() {
+function initBudgetModulo() {
     caricaDashboard();
-});
+}
 
 /**
  * Recupera i dati dal server (Dashboard e Anagrafica Istituzioni)
@@ -31,7 +31,7 @@ function caricaDashboard() {
 function renderDashboard(res) {
     mostraLoading(false);
     if (!res.success) {
-        Swal.fire('Attenzione', res.message, 'warning');
+        showToast(res.message, 'warning');
         return;
     }
 
@@ -44,9 +44,10 @@ function renderDashboard(res) {
         aggiornaAutocompleteIstituzioni(res.istituzioni);
     }
 
-    if (res.isAdmin) {
-        // Mostra Container Admin
+if (res.isAdmin) {
+        // Mostra Container Admin e Nasconde Istituzione (Prevenzione SPA collision)
         document.getElementById('ministero-budget-container').classList.remove('d-none');
+        document.getElementById('istituzione-budget-container').classList.add('d-none');
         
         renderAdminView(res.report);
         
@@ -54,8 +55,9 @@ function renderDashboard(res) {
         const switchEl = document.getElementById('masterSwitchBudget');
         if (switchEl) switchEl.checked = res.isAttivo;
     } else {
-        // Mostra Container Istituzione
+        // Mostra Container Istituzione e Nasconde Admin (Prevenzione SPA collision)
         document.getElementById('istituzione-budget-container').classList.remove('d-none');
+        document.getElementById('ministero-budget-container').classList.add('d-none');
         
         renderUserView(res.stats, res.transazioni);
     }
@@ -100,12 +102,12 @@ function submitRichiestaBudget() {
     const istFound = window.listaIstituzioniGlobal.find(i => i.nome === nomeSelezionato);
 
     if (!istFound) {
-        Swal.fire('Errore', 'Selezionare un\'Istituzione valida dalla lista suggerita.', 'error');
+    showToast('Selezionare un\'Istituzione valida dalla lista suggerita.', 'error');
         return;
     }
 
     if (!importo || importo <= 0) {
-        Swal.fire('Errore', 'Inserire un importo valido.', 'error');
+        showToast('Inserire un importo valido.', 'error');
         return;
     }
 
@@ -119,8 +121,8 @@ function submitRichiestaBudget() {
     google.script.run
         .withSuccessHandler(function() {
             bootstrap.Modal.getInstance(document.getElementById('modalRichiestaBudget')).hide();
-            Swal.fire('Successo', 'Richiesta inviata correttamente.', 'success');
-            caricaDashboard(); // Refresh
+            showToast('Richiesta inviata correttamente.', 'success');
+            caricaDashboard();
         })
         .withFailureHandler(errorHandler)
         .submitBudgetRequest(getAuthToken(), payload);
@@ -174,15 +176,15 @@ function handleMasterSwitchChange(el) {
         .withSuccessHandler(res => {
             mostraLoading(false);
             if(res.success) {
-                Swal.fire('Successo', res.message, 'success');
+                showToast(res.message, 'success');
             } else {
-                Swal.fire('Errore', res.message, 'error');
+                showToast(res.message, 'error');
                 el.checked = !newState; // Rollback visivo in caso di errore logico
             }
         })
         .withFailureHandler(err => {
             mostraLoading(false);
-            Swal.fire('Errore di Rete', err.message, 'error');
+            showToast(err.message, 'error');
             el.checked = !newState; // Rollback visivo in caso di fallimento server
         })
         .toggleScambioBudget(getAuthToken(), newState);
@@ -245,18 +247,97 @@ function renderStatoBadge(stato) {
  * Utility: Spinner e Overlay
  */
 function mostraLoading(show) {
-    // Utilizza il loader overlay standard se esiste nel template principale
-    const loader = document.getElementById('loaderOverlay');
-    if (loader) loader.style.display = show ? 'flex' : 'none';
+    // Deleghiamo la visualizzazione alla funzione globale del Portale (JavaScript.html)
+    if (typeof toggleLoading === 'function') {
+        toggleLoading(show);
+    }
 }
 
 function errorHandler(error) {
     mostraLoading(false);
-    Swal.fire('Errore di Sistema', error.message, 'error');
+    showToast(error.message, 'error');
 }
 
 function getAuthToken() {
-    return localStorage.getItem('afam_session_token');
+    // Corretto l'accesso coerente allo Storage del portale principale
+    return sessionStorage.getItem('AFAM_SESSION_TOKEN');
+}
+
+/**
+ * Recupera e mostra i dettagli (storico richieste) per una specifica istituzione lato Admin.
+ * @param {string} idIstituzione - Il codice o l'ID dell'istituzione cliccata
+ */
+window.visualizzaDettaglioAdmin = function(idIstituzione) {
+    if (!idIstituzione) return;
+
+    mostraLoading(true);
+    
+    // Richiamata al controller (Code.gs) per ottenere lo storico
+    google.script.run
+        .withSuccessHandler(function(res) {
+            mostraLoading(false);
+            if (!res.success) {
+                showToast(res.message || 'Errore nel recupero dello storico', 'error');
+                return;
+            }
+            
+            // Renderizza i dati e apri la modale (Assumendo che l'ID della modale sia 'modalDettagliAdmin')
+            renderTabellaDettagliAdmin(res.storico);
+            
+            const modalEl = document.getElementById('modalDettagliAdmin');
+            if (modalEl) {
+                // Inizializza e mostra la modale di Bootstrap 5
+                const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modalInstance.show();
+            } else {
+                console.error("Modale 'modalDettagliAdmin' non trovata nel DOM.");
+            }
+        })
+        .withFailureHandler(errorHandler)
+        // Sostituisci getStoricoIstituzione con il nome reale della tua funzione backend in Code.gs se differisce
+        .getStoricoIstituzione(getAuthToken(), idIstituzione); 
+};
+
+/**
+ * Funzione di appoggio per iniettare l'HTML nella modale
+ */
+function renderTabellaDettagliAdmin(storico) {
+    const tbody = document.getElementById('tbodyDettagliAdmin');
+    if (!tbody) return;
+    
+    if (!storico || storico.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nessuna transazione trovata per questa istituzione.</td></tr>';
+        return;
+    }
+    
+    // Genera le righe dello storico
+    let html = '';
+    storico.forEach(req => {
+        html += `
+            <tr>
+                <td>${req.data || '-'}</td>
+                <td>${req.tipo || '-'}</td>
+                <td>€ ${req.importo ? Number(req.importo).toLocaleString('it-IT') : '0'}</td>
+                <td>${req.controparte || '-'}</td>
+                <td><span class="badge bg-${getBadgeColor(req.stato)}">${req.stato}</span></td>
+            </tr>
+        `;
+    });
+    
+    tbody.innerHTML = html;
+}
+
+/**
+ * Utility per colorare le badge degli stati
+ */
+function getBadgeColor(stato) {
+    switch((stato || '').toUpperCase()) {
+        case 'ACCETTATA': return 'success';
+        case 'RIFIUTATA': return 'danger';
+        case 'IN ATTESA': return 'warning text-dark';
+        case 'ANNULLATA_MINISTERO': return 'secondary';
+        default: return 'primary';
+    }
 }
 
 </script>
