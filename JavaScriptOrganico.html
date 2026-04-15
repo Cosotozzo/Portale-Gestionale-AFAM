@@ -401,4 +401,27 @@ function getBadgeColor(stato) {
     }
 }
 
+/**
+ * Gestisce l'accettazione o il rifiuto di una richiesta di budget
+ * @param {string} id - ID univoco della transazione
+ * @param {string} azione - 'ACCETTATA' o 'RIFIUTATA'
+ */
+function gestisciRichiesta(id, azione) {
+    const conferma = confirm(`Sei sicuro di voler segnare questa richiesta come ${azione}?`);
+    if (!conferma) return;
+
+    // Feedback visivo (opzionale: disabilitare pulsanti)
+    console.log(`Esecuzione azione ${azione} su ID ${id}`);
+
+    google.script.run
+        .withSuccessHandler((response) => {
+            Swal.fire('Operazione Completata', `Richiesta ${azione} con successo.`, 'success');
+            caricaDatiBudget(); // Refresh della tabella
+        })
+        .withFailureHandler((error) => {
+            Swal.fire('Errore di Sistema', error.message, 'error');
+        })
+        .updateBudgetRequestStatus(id, azione);
+}
+
 </script>

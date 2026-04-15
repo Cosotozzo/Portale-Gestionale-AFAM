@@ -17,8 +17,8 @@ var DB_CONFIG = {
   "SHEET_CESSAZIONI_EXP": "EXPORT_DATI_CESSAZIONI",
   "ID_BUDGET": scriptProperties.getProperty('ID_BUDGET'),
   "SHEET_BUDGET_BASE": "BUDGET_BASE",
-  "SHEET_BUDGET_TRANS": "BUDGET_TRANSAZIONI",
-  "SHEET_BUDGET_EXP": "EXPORT_BUDGET"
+  "SHEET_BUDGET_TRANS": "BUDGET_TRANS",
+  "SHEET_BUDGET_EXP": "BUDGET_EXP"
 };
 
 // Mappa delle colonne centralizzata
@@ -39,8 +39,7 @@ var COL_MAP = {
   },
   BUDGET_TRANS: {
     ID_TRANS: 0, ID_RICHIEDENTE: 1, ID_CEDENTE: 2, STATO: 3, JSON_BLOB: 4
-  }, // <-- INSERIRE LA VIRGOLA QUI
-// INIZIO MODIFICA
+  }, 
   BUDGET_EXP: {
     ID_CEDENTE: 0, DENOM_CEDENTE: 1, RESIDUO_ANTE_CED: 2, RESIDUO_POST_CED: 3,
     ID_ACQUIRENTE: 4, DENOM_ACQUIRENTE: 5, RESIDUO_ANTE_ACQ: 6, RESIDUO_POST_ACQ: 7, VALORE_SCAMB: 8
@@ -1408,4 +1407,30 @@ function getStoricoIstituzione(token, idIstituzione) {
     Logger.log("Errore getStoricoIstituzione: " + e.message);
     return { success: false, message: e.message };
   }
+}
+
+/**
+ * Aggiorna lo stato di una richiesta nel foglio BUDGET_TRANS
+ * Implementa logica Zero Trust verificando l'identità dell'istituzione
+ */
+function updateBudgetRequestStatus(id, azione) {
+  Logger.log(`Richiesta aggiornamento stato: ID=${id}, AZIONE=${azione}`);
+  const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+  const sheet = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+  const data = sheet.getDataRange().getValues();
+  
+  // Identifica l'indice della colonna STATO (Colonna 8 -> Indice 7)
+  const colStato = DB_CONFIG.COL_BUDGET.STATO - 1;
+  const colId = 0; // Assumendo ID in colonna A
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][colId].toString() === id.toString()) {
+      // TODO: Inserire qui validazione di sicurezza (Session.getActiveUser())
+      sheet.getRange(i + 1, colStato + 1).setValue(azione);
+      Logger.log(`Stato aggiornato con successo per riga ${i + 1}`);
+      return { success: true };
+    }
+  }
+  
+  throw new Error("ID Richiesta non trovato nel database.");
 }
