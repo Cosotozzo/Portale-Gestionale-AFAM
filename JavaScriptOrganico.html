@@ -63,21 +63,78 @@ if (res.isAdmin) {
     }
 }
 
-/**
- * Funzione per popolare il datalist dell'autocomplete
- */
 function aggiornaAutocompleteIstituzioni(istituzioni) {
-    const datalist = document.getElementById('listaIstituzioni');
-    if (!datalist) return;
+    window.listaIstituzioniGlobal = istituzioni; 
+    const inputEl = document.getElementById('cedenteInput');
+    const listEl = document.getElementById('listaIstituzioniDrop');
+    
+    if (!inputEl || !listEl) return;
 
-    datalist.innerHTML = ''; // Pulizia
-    window.listaIstituzioniGlobal = istituzioni; // Salvataggio per il mapping ID
+    // Rimuoviamo eventuali listener precedenti clonando l'elemento (previene trigger multipli in caso di re-rendering)
+    const clone = inputEl.cloneNode(true);
+    inputEl.parentNode.replaceChild(clone, inputEl);
+    
+    const nomiIstituzioni = istituzioni.map(i => i.nome);
+    
+    clone.addEventListener('input', function() {
+        const val = this.value.toLowerCase();
+        listEl.innerHTML = ''; 
+        
+        if (!val) {
+            listEl.classList.remove('show');
+            return;
+        }
 
-    istituzioni.forEach(ist => {
-        const option = document.createElement('option');
-        option.value = ist.nome; // Visualizza la Denominazione (Colonna B)
-        datalist.appendChild(option);
+        const filtered = nomiIstituzioni.filter(i => i.toLowerCase().includes(val));
+
+        if (filtered.length === 0) {
+            listEl.classList.remove('show');
+            return;
+        }
+
+        filtered.forEach(item => {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.className = 'dropdown-item small py-2';
+            a.style.cursor = 'pointer';
+            a.innerText = item; 
+            
+            a.addEventListener('click', function() {
+                clone.value = item;
+                listEl.classList.remove('show');
+            });
+            
+            li.appendChild(a);
+            listEl.appendChild(li);
+        });
+
+        listEl.classList.add('show');
     });
+
+    // Chiusura menu al click esterno
+    document.addEventListener('click', function(e) {
+        if (e.target !== clone && e.target !== listEl) {
+            listEl.classList.remove('show');
+        }
+    });
+}
+
+// --- LOGICA FORMATTAZIONE VALUTA ---
+function formattaImportoSuBlur(input) {
+    if (!input.value) return;
+    // Sostituisce la virgola con punto, rimuove eventuali puntini delle migliaia
+    let valStr = input.value.replace(/\./g, '').replace(',', '.');
+    let valFloat = parseFloat(valStr);
+    
+    if (!isNaN(valFloat)) {
+        input.value = valFloat.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+}
+
+function pulisciImportoSuFocus(input) {
+    if (!input.value) return;
+    // Rimuove i puntini delle migliaia per facilitare il ritocco del numero senza rompere la sintassi
+    input.value = input.value.replace(/\./g, '');
 }
 
 /**
@@ -95,18 +152,22 @@ function openNuovaRichiestaModal() {
  */
 function submitRichiestaBudget() {
     const nomeSelezionato = document.getElementById('cedenteInput').value;
-    const importo = document.getElementById('inputImporto').value;
+    const importoRaw = document.getElementById('inputImporto').value;
     const note = document.getElementById('inputNote').value;
 
     // --- LOGICA MAPPING NOME -> ID ---
     const istFound = window.listaIstituzioniGlobal.find(i => i.nome === nomeSelezionato);
 
     if (!istFound) {
-    showToast('Selezionare un\'Istituzione valida dalla lista suggerita.', 'error');
+        showToast('Selezionare un\'Istituzione valida dalla lista suggerita.', 'error');
         return;
     }
 
-    if (!importo || importo <= 0) {
+    // Pulisce la stringa valuta (es. "10.000,00" -> "10000.00") prima dell'invio al backend
+    const importoPulito = importoRaw.replace(/\./g, '').replace(',', '.');
+    const importo = parseFloat(importoPulito);
+
+    if (isNaN(importo) || importo <= 0) {
         showToast('Inserire un importo valido.', 'error');
         return;
     }
@@ -302,7 +363,7 @@ window.visualizzaDettaglioAdmin = function(idIstituzione) {
  * Funzione di appoggio per iniettare l'HTML nella modale
  */
 function renderTabellaDettagliAdmin(storico) {
-    const tbody = document.getElementById('tbodyDettagliAdmin');
+    const tbody = document.getElementById('bodyTabellaDettagliAdmin');
     if (!tbody) return;
     
     if (!storico || storico.length === 0) {

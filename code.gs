@@ -168,7 +168,8 @@ function restoreSession(token) {
       role: userCtx.ruolo, // Mappa 'ruolo' su 'role' per il frontend
       nome: userCtx.nome,
       cognome: userCtx.cognome,
-      istituzioneId: userCtx.istituzioneId
+      istituzioneId: userCtx.istituzioneId,
+      istituzioneNome: getInstitutionNameById(userCtx.istituzioneId)
     };
   } catch (e) {
     // Se la sessione è scaduta o invalida, il frontend dovrà fare logout
@@ -238,14 +239,15 @@ function doLogin(formObject) {
       lock.releaseLock();
     }
 
-    return {
+return {
       success: true, 
       token: newSessionId, 
       username: usernameInput,
       role: targetUser[COL_MAP.CRED.RUOLO], 
       nome: targetUser[COL_MAP.CRED.NOME], 
       cognome: targetUser[COL_MAP.CRED.COGNOME], 
-      istituzioneId: targetUser[COL_MAP.CRED.ISTITUZIONE_ID]
+      istituzioneId: targetUser[COL_MAP.CRED.ISTITUZIONE_ID],
+      istituzioneNome: getInstitutionNameById(targetUser[COL_MAP.CRED.ISTITUZIONE_ID])
     };
 
   } catch (e) {
@@ -610,6 +612,31 @@ function getInstitutionNames() {
   return cleanList;
 }
 
+/**
+ * Utility: Recupera la denominazione dell'istituzione dato il suo ID usando la cache.
+ */
+function getInstitutionNameById(id) {
+    if (!id) return "";
+    var cache = CacheService.getScriptCache();
+    var cachedIst = cache.get("CACHE_ISTITUZIONI_MAP");
+    var mapIst = {};
+    if (cachedIst) {
+        mapIst = JSON.parse(cachedIst);
+    } else {
+        var ssAuth = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+        var sheetIst = ssAuth.getSheetByName(DB_CONFIG.SHEET_ISTITUZIONI);
+        if (sheetIst) {
+            var dataIst = sheetIst.getDataRange().getValues();
+            for(var k=1; k<dataIst.length; k++) {
+                mapIst[String(dataIst[k][0]).trim()] = dataIst[k][1];
+            }
+            // Cache per 6 ore
+            cache.put("CACHE_ISTITUZIONI_MAP", JSON.stringify(mapIst), 21600);
+        }
+    }
+    return mapIst[String(id).trim()] || id;
+}
+
 // INIZIO MODIFICA - FUNZIONI ADMIN UTENZE
 function fetchPendingUsers(token) {
   try {
@@ -949,10 +976,11 @@ function syncExportTable() {
  * Il JSON_Blob viene strutturato qui lato server garantendo il logging completo.
  */
 function submitBudgetRequest(token, payload) {
-  var lock = LockService.getScriptLock();
+var lock = LockService.getScriptLock();
   try {
     var userCtx = verifySessionAndGetUser(token);
     var idRichiedente = String(userCtx.istituzioneId);
+    var idCedente = String(payload.cedenteId).trim();
 
     // Pessimistic Locking come da Specifica (Cap 5)
     if (!lock.tryLock(5000)) {
@@ -964,9 +992,61 @@ function submitBudgetRequest(token, payload) {
         throw new Error("Importo non valido.");
     }
 
+    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    var sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
+    var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+
+    // Guardia Zero Trust: evita errori cryptici di appendRow su null
+    if (!sheetBase || !sheetTrans) {
+        throw new Error("Errore DB: Impossibile trovare i fogli. Verifica che i fogli " + DB_CONFIG.SHEET_BUDGET_BASE + " e " + DB_CONFIG.SHEET_BUDGET_TRANS + " esistano nel Google Sheet.");
+    }
+
+    // --- CALCOLO SALDO CEDENTE IN TEMPO REALE (Sotto Lock) ---
+    var baseData = sheetBase.getDataRange().getValues();
+    var budgetInizialeCedente = 0;
+    
+    for (var i = 1; i < baseData.length; i++) {
+        if (String(baseData[i][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idCedente) {
+            budgetInizialeCedente = parseFloat(baseData[i][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
+            break;
+        }
+    }
+
+    var transData = sheetTrans.getLastRow() > 1 ? sheetTrans.getDataRange().getValues() : [];
+    var usciteCedente = 0;
+    var entrateCedente = 0;
+
+    for (var t = 1; t < transData.length; t++) {
+        var tReqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+        var tCedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+        var tStato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+        
+        var tPayloadRaw = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
+        var tPayload = {};
+        try { tPayload = JSON.parse(tPayloadRaw); } catch(e){}
+        var tImporto = parseFloat(tPayload.importo_richiesto) || 0;
+
+        // Entrate: Il cedente ha a sua volta acquisito fondi da altri (stato ACCETTATA)
+        if (tReqId === idCedente && tStato === 'ACCETTATA') {
+            entrateCedente += tImporto;
+        }
+        
+        // Uscite: Il cedente sta cedendo o ha ceduto fondi
+        if (tCedId === idCedente && (tStato === 'ACCETTATA' || tStato === 'INVIATA' || tStato === 'IN_INTEGRAZIONE')) {
+            usciteCedente += tImporto;
+        }
+    }
+
+    var saldoDisponibileCedente = budgetInizialeCedente + entrateCedente - usciteCedente;
+
+    // --- VERIFICA CAPIENZA ---
+    if (importo > saldoDisponibileCedente) {
+        throw new Error("Fondi insufficienti/già prenotati da altri enti.");
+    }
+
+    // --- SALVATAGGIO TRANSAZIONE ---
     var now = new Date().toISOString();
     
-    // Costruzione rigorosa del JSON_Blob con tracciamento temporale completo
     var dataBlob = {
       importo_richiesto: importo,
       history: [
@@ -979,19 +1059,13 @@ function submitBudgetRequest(token, payload) {
         }
       ]
     };
-
     var idTransazione = Utilities.getUuid();
     var statoIniziale = "INVIATA"; 
 
-    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
-    var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
-    
-    // Inserimento rispettando COL_MAP.BUDGET_TRANS: 
-    // ID_TRANS, ID_RICHIEDENTE, ID_CEDENTE, STATO, JSON_BLOB
     sheetTrans.appendRow([
       idTransazione,
       idRichiedente,
-      String(payload.cedenteId).trim(),
+      idCedente,
       statoIniziale,
       JSON.stringify(dataBlob)
     ]);
@@ -1257,5 +1331,81 @@ function annullaTransazioneMinistero(token, idTrans) {
     return { success: false, message: e.message };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/**
+ * API RPC: Recupera lo storico transazioni di una singola istituzione per la Dashboard Ministeriale.
+ * @param {string} token Session token dell'admin.
+ * @param {string} idIstituzione ID dell'istituzione di cui visualizzare il dettaglio.
+ */
+function getStoricoIstituzione(token, idIstituzione) {
+  try {
+    var userCtx = verifySessionAndGetUser(token);
+    var ruolo = String(userCtx.ruolo).toUpperCase().trim();
+    
+    if (ruolo !== 'ADMIN' && ruolo !== 'MINISTERO') {
+        throw new Error("Accesso negato: Permessi insufficienti.");
+    }
+
+    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    var sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
+    var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+
+    // Mappa Anagrafica per recuperare i nomi della controparte
+    var baseData = sheetBase ? sheetBase.getDataRange().getValues() : [];
+    var mapIstituzioni = {};
+    for (var i = 1; i < baseData.length; i++) {
+        var id = String(baseData[i][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim();
+        mapIstituzioni[id] = baseData[i][COL_MAP.BUDGET_BASE.DENOMINAZIONE];
+    }
+
+    var transData = sheetTrans ? sheetTrans.getDataRange().getValues() : [];
+    var storico = [];
+
+    for (var t = 1; t < transData.length; t++) {
+        var reqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+        var cedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+
+        if (reqId === idIstituzione || cedId === idIstituzione) {
+            var stato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+            var rawJson = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
+            
+            var payload = {};
+            try { payload = JSON.parse(rawJson); } catch(e){}
+            
+            var importo = parseFloat(payload.importo_richiesto) || 0;
+            var histDate = (payload.history && payload.history.length > 0) ? payload.history[0].timestamp : "";
+            var dataFormattata = histDate ? Utilities.formatDate(new Date(histDate), "Europe/Rome", "dd/MM/yyyy") : "";
+            
+            var isRichiedente = (reqId === idIstituzione);
+            var partnerId = isRichiedente ? cedId : reqId;
+            var partnerNome = mapIstituzioni[partnerId] ? mapIstituzioni[partnerId] : partnerId;
+            
+            var tipoTransazione = "";
+            if (stato === 'ACCETTATA') {
+                tipoTransazione = isRichiedente ? "ACQUISITO" : "CEDUTO";
+            } else {
+                tipoTransazione = isRichiedente ? "RICHIESTA INVIATA" : "RICHIESTA RICEVUTA";
+            }
+
+            storico.push({
+                data: dataFormattata,
+                tipo: tipoTransazione,
+                importo: importo,
+                controparte: partnerNome,
+                stato: stato
+            });
+        }
+    }
+
+    // Ordine cronologico inverso (Le più recenti in alto)
+    storico.reverse();
+
+    return { success: true, storico: storico };
+
+  } catch (e) {
+    Logger.log("Errore getStoricoIstituzione: " + e.message);
+    return { success: false, message: e.message };
   }
 }

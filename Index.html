@@ -187,11 +187,15 @@
                 </a>
             </div>
             <div class="col-6 d-flex justify-content-end align-items-center">
-               <div id="user-area" class="dropdown hidden">
-                 <a href="#" class="user-badge text-decoration-none dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                   <i class="fas fa-user-circle me-2"></i> <span id="nav-user-name">Utente</span>
-                 </a>
-                 <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
+                          <div id="user-area" class="dropdown hidden">
+            <a href="#" class="user-badge text-decoration-none dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                              <i class="fas fa-user-circle me-2 fs-4"></i> 
+                              <div class="d-flex flex-column text-start me-1">
+                                  <span id="nav-user-name" style="line-height: 1;">Utente</span>
+                                  <span id="nav-user-inst" class="fw-normal mt-1" style="font-size: 0.65rem; opacity: 0.9; line-height: 1.1; text-transform: none; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
+                              </div>
+                            </a>
+            <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
                    <li><button class="dropdown-item text-danger fw-bold" type="button" onclick="openGenericModal('LOGOUT')"><i class="fas fa-sign-out-alt me-2"></i>Disconetti</button></li>
                  </ul>
                </div>

@@ -104,26 +104,22 @@
                     <h5 class="modal-title fw-bold text-white"><i class="fas fa-paper-plane me-2"></i>Nuova Richiesta Scambio</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body p-4">
+                    <div class="modal-body p-4">
                     <form id="formRichiestaBudget" onsubmit="event.preventDefault();">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold text-muted small">ISTITUZIONE CEDENTE</label>
-                            <div class="form-group">
-                              <label for="cedenteInput">Istituzione Cedente</label>
-                              <input type="text" id="cedenteInput" class="form-control" list="listaIstituzioni" placeholder="Inizia a scrivere il nome dell'istituzione...">
-                              <datalist id="listaIstituzioni">
-                                </datalist>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold text-muted small">IMPORTO RICHIESTO (€)</label>
-                            <input type="number" class="form-control" id="inputImporto" step="0.01" min="1" placeholder="Es. 5000.00" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold text-muted small">NOTE (OPZIONALE)</label>
-                            <textarea class="form-control" id="inputNote" rows="2" placeholder="Motivazione..."></textarea>
-                        </div>
-                    </form>
+                      <div class="mb-3 position-relative">
+                          <label class="form-label fw-bold text-muted small">ISTITUZIONE CEDENTE</label>
+                          <input type="text" id="cedenteInput" class="form-control" placeholder="Inizia a scrivere il nome dell'istituzione..." autocomplete="off">
+                          <ul class="dropdown-menu w-100 shadow" id="listaIstituzioniDrop" style="max-height: 220px; overflow-y: auto;"></ul>
+                      </div>
+                      <div class="mb-3">
+                          <label class="form-label fw-bold text-muted small">IMPORTO RICHIESTO (€)</label>
+                          <input type="text" class="form-control fw-bold fs-5 text-primary" id="inputImporto" placeholder="0,00" required onblur="formattaImportoSuBlur(this)" onfocus="pulisciImportoSuFocus(this)" oninput="this.value = this.value.replace(/[^0-9,.]/g, '');">
+                      </div>
+                      <div class="mb-3">
+                          <label class="form-label fw-bold text-muted small">NOTE (OPZIONALE)</label>
+                          <textarea class="form-control" id="inputNote" rows="2" placeholder="Eventuale motivazione o dettaglio..."></textarea>
+                      </div>
+                      </form>
                 </div>
                 <div class="modal-footer border-top p-3 bg-light justify-content-between">
                     <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Annulla</button>
@@ -162,6 +158,37 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <div class="modal fade" id="modalDettagliAdmin" tabindex="-1" aria-labelledby="modalDettagliAdminLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalDettagliAdminLabel">Storico Transazioni Istituzione</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+          </div>
+          <div class="modal-body p-0">
+            <div class="table-responsive">
+              <table class="table table-hover table-striped align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th scope="col" class="px-3">Data</th>
+                    <th scope="col">Tipo</th>
+                    <th scope="col">Importo</th>
+                    <th scope="col">Controparte</th>
+                    <th scope="col">Stato</th>
+                  </tr>
+                </thead>
+                <tbody id="bodyTabellaDettagliAdmin">
+                    </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modal-footer bg-light">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Chiudi</button>
+          </div>
+        </div>
+      </div>
     </div>
 
 </div>

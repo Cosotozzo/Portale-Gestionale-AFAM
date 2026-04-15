@@ -48,7 +48,7 @@ const MODULES_CONFIG = {
                 currentUser = res;
                 updateUserInterface(res);
                 showView('view-gateway');
-                showToast("Bentornato, " + res.nome, 'success');
+                showToast("Bentornato/a: " + res.nome + " " + res.cognome, 'success');
                 
                 // AVVIO MONITORAGGIO INATTIVITÀ
                 startInactivityMonitor();
@@ -130,13 +130,24 @@ const MODULES_CONFIG = {
   }
 
 function updateUserInterface(user) {
-      // Aggiorna Nome Utente nella Navbar
+// Aggiorna Nome Utente e Istituzione nella Navbar
       const elName = document.getElementById('nav-user-name');
+      const elInst = document.getElementById('nav-user-inst');
+      
       if(elName) elName.innerText = escapeHtml(user.nome + " " + user.cognome);
+      
+      if(elInst) {
+          const role = user.role ? String(user.role).toUpperCase().trim() : '';
+          if (role === 'ADMIN' || role === 'MINISTERO') {
+              elInst.innerText = "Ministero dell'Università e della Ricerca";
+          } else {
+              elInst.innerText = user.istituzioneNome ? escapeHtml(user.istituzioneNome) : "AFAM";
+              elInst.title = user.istituzioneNome ? escapeHtml(user.istituzioneNome) : ""; // Tooltip in caso di nomi lunghi troncati
+          }
+      }
       
 // Gestione visibilità card Admin
       const adminCard = document.getElementById('module-card-users');
-// INIZIO MODIFICA
       if(adminCard) {
           const userRole = user.role ? String(user.role).toUpperCase().trim() : '';
           if (userRole === 'ADMIN' || userRole === 'MINISTERO') {
