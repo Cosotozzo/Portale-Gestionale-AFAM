@@ -477,7 +477,7 @@ function openBudgetOrganicoModule() {
       // 1. Bypass Admin e Ministero (Specifica Punto 6.1)
       const userRole = currentUser.role ? String(currentUser.role).toUpperCase().trim() : '';
       if (userRole === 'ADMIN' || userRole === 'MINISTERO') {
-          showView('view-ScambioBudgetOrganico'); 
+          // Viene rimosso showView qui. Verrà chiamato alla fine del caricamento dati.
           if(typeof initBudgetModulo === 'function') initBudgetModulo();
           return;
       }
@@ -486,11 +486,11 @@ function openBudgetOrganicoModule() {
       toggleLoading(true);
       google.script.run
           .withSuccessHandler(isAttivo => {
-              toggleLoading(false);
               if (isAttivo) {
-                  showView('view-ScambioBudgetOrganico');
+                  // Mantiene il loader globale attivo e passa la palla al modulo
                   if(typeof initBudgetModulo === 'function') initBudgetModulo();
               } else {
+                  toggleLoading(false); // Spegne il loader solo in caso di blocco
                   showToast("Funzionalità non ancora attivata dal Ministero.", "warning");
               }
           })

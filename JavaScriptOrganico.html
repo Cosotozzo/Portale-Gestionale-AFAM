@@ -35,16 +35,12 @@ function renderDashboard(res) {
         return;
     }
 
-    // Nasconde lo spinner di caricamento iniziale
-    const loader = document.getElementById('scambio-budget-loader');
-    if (loader) loader.classList.add('d-none');
-
     // --- POPOLAMENTO AUTOCOMPLETE ---
     if (res.istituzioni) {
         aggiornaAutocompleteIstituzioni(res.istituzioni);
     }
 
-if (res.isAdmin) {
+    if (res.isAdmin) {
         // Mostra Container Admin e Nasconde Istituzione (Prevenzione SPA collision)
         document.getElementById('ministero-budget-container').classList.remove('d-none');
         document.getElementById('istituzione-budget-container').classList.add('d-none');
@@ -60,6 +56,11 @@ if (res.isAdmin) {
         document.getElementById('ministero-budget-container').classList.add('d-none');
         
         renderUserView(res.stats, res.transazioni);
+    }
+
+    // Mostra la vista solo ORA, quando i dati vecchi sono stati sovrascritti
+    if (typeof showView === 'function') {
+        showView('view-ScambioBudgetOrganico');
     }
 }
 
@@ -259,25 +260,27 @@ function renderUserView(stats, transazioni) {
     const bdgDisponibileEl = document.getElementById('stat-budget-disponibile');
     if(bdgDisponibileEl) bdgDisponibileEl.innerText = '€ ' + formatMoney(stats.saldoDisponibile);
     
-    // N.B: Modifica stats.richiesteAttive e stats.scambiConclusi in base a ciò che restituisce il tuo server
     const reqAttiveEl = document.getElementById('stat-richieste-attive');
     if(reqAttiveEl) reqAttiveEl.innerText = stats.richiesteAttive || '0';
     
-    const scambiConclusiEl = document.getElementById('stat-scambi-conclusi');
-    if(scambiConclusiEl) scambiConclusiEl.innerText = stats.scambiConclusi || '0';
+    const scambiAccettatiEl = document.getElementById('stat-scambi-accettati');
+    if(scambiAccettatiEl) scambiAccettatiEl.innerText = stats.scambiAccettati || '0';
+
+    const scambiRifiutatiEl = document.getElementById('stat-scambi-rifiutati');
+    if(scambiRifiutatiEl) scambiRifiutatiEl.innerText = stats.scambiRifiutati || '0';
 
     // Update Table
     const tbody = document.getElementById('tbodyIstituzioneBudget');
     if (!tbody) return;
 
     tbody.innerHTML = transazioni.map(t => `
-        <tr>
+        <tr class="text-center">
             <td>${t.data}</td>
             <td class="fw-bold">${t.partner}</td>
             <td><span class="badge ${t.tipo === 'INVIATA' ? 'bg-primary' : 'bg-info'}">${t.tipo}</span></td>
-            <td class="text-end fw-bold">€ ${formatMoney(t.importo)}</td>
+            <td class="fw-bold">€ ${formatMoney(t.importo)}</td>
             <td>${renderStatoBadge(t.stato)}</td>
-            <td class="text-center">
+            <td>
                   ${t.stato === 'INVIATA' && t.tipo === 'RICEVUTA' ? `
                    <button class="btn btn-sm btn-success rounded-pill shadow-sm me-1" onclick="gestisciRichiesta('${t.id}', 'ACCETTATA')"><i class="fas fa-check me-1"></i>Accetta</button>
                    <button class="btn btn-sm btn-danger rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'RIFIUTATA')"><i class="fas fa-times me-1"></i>Rifiuta</button>
