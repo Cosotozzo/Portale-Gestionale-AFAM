@@ -42,7 +42,7 @@ var COL_MAP = {
   }, 
   BUDGET_EXP: {
     ID_CEDENTE: 0, DENOM_CEDENTE: 1, RESIDUO_ANTE_CED: 2, RESIDUO_POST_CED: 3,
-    ID_ACQUIRENTE: 4, DENOM_ACQUIRENTE: 5, RESIDUO_ANTE_ACQ: 6, RESIDUO_POST_ACQ: 7, VALORE_SCAMB: 8
+    ID_ACQUIRENTE: 4, DENOM_ACQUIRENTE: 5, RESIDUO_ANTE_ACQ: 6, RESIDUO_POST_ACQ: 7, VALORE_SCAMB: 8, ID_TRANS: 9
   }
 };
 
@@ -215,7 +215,7 @@ function doLogin(formObject) {
           return { success: false, message: "Utenza in attesa di approvazione da parte del Ministero." };
         }
       } else { 
-        return { success: false, message: "Password errata." };
+        return { success: false, message: "Nome Utente o Password errata." };
       }
     } else {
        return { success: false, message: "Utente non trovato." };
@@ -1170,6 +1170,9 @@ function getBudgetDashboardData(token) {
         var entrate = 0; var uscitePendenza = 0; var usciteAccettate = 0;
         var myTrans = [];
         
+var countRichiesteAttive = 0;
+        var countScambiConclusi = 0;
+
         for (var t=1; t<transData.length; t++) {
             var reqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
             var cedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
@@ -1191,7 +1194,14 @@ function getBudgetDashboardData(token) {
                 if (isRichiedente && stato === 'ACCETTATA') entrate += importo;
                 if (!isRichiedente && stato === 'ACCETTATA') usciteAccettate += importo;
                 if (!isRichiedente && (stato === 'INVIATA' || stato === 'IN_INTEGRAZIONE')) uscitePendenza += importo;
-                
+
+                // Calcolo statistiche visive per i riquadri
+                if (stato === 'INVIATA' || stato === 'IN_INTEGRAZIONE' || stato === 'BOZZA_CEDENTE') {
+                    countRichiesteAttive++;
+                } else if (stato === 'ACCETTATA' || stato === 'RIFIUTATA' || stato === 'ANNULLATA_MINISTERO') {
+                    countScambiConclusi++;
+                }
+
                 myTrans.push({
                     id: transData[t][COL_MAP.BUDGET_TRANS.ID_TRANS], data: dataFormattata,
                     tipo: isRichiedente ? 'INVIATA' : 'RICEVUTA',
@@ -1199,6 +1209,21 @@ function getBudgetDashboardData(token) {
                 });
             }
         }
+        
+        return {
+            success: true, 
+            isAdmin: false,
+            stats: { 
+                saldoIniziale: myBudgetBase, 
+                entrateAccettate: entrate, 
+                uscitePendenti: (usciteAccettate + uscitePendenza), 
+                saldoDisponibile: (myBudgetBase + entrate - usciteAccettate - uscitePendenza),
+                richiesteAttive: countRichiesteAttive,
+                scambiConclusi: countScambiConclusi
+            },
+            transazioni: myTrans, 
+            istituzioni: listIstituzioni
+        };
         
         return {
             success: true, 
@@ -1413,24 +1438,193 @@ function getStoricoIstituzione(token, idIstituzione) {
  * Aggiorna lo stato di una richiesta nel foglio BUDGET_TRANS
  * Implementa logica Zero Trust verificando l'identità dell'istituzione
  */
-function updateBudgetRequestStatus(id, azione) {
-  Logger.log(`Richiesta aggiornamento stato: ID=${id}, AZIONE=${azione}`);
-  const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
-  const sheet = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
-  const data = sheet.getDataRange().getValues();
-  
-  // Identifica l'indice della colonna STATO (Colonna 8 -> Indice 7)
-  const colStato = DB_CONFIG.COL_BUDGET.STATO - 1;
-  const colId = 0; // Assumendo ID in colonna A
-
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][colId].toString() === id.toString()) {
-      // TODO: Inserire qui validazione di sicurezza (Session.getActiveUser())
-      sheet.getRange(i + 1, colStato + 1).setValue(azione);
-      Logger.log(`Stato aggiornato con successo per riga ${i + 1}`);
-      return { success: true };
+function updateBudgetRequestStatus(token, id, azione) {
+  const lock = LockService.getScriptLock();
+  try {
+    // 1. Validazione Sessione (Zero Trust)
+    const userCtx = verifySessionAndGetUser(token);
+    const idIstituzione = String(userCtx.istituzioneId).trim();
+    
+    // 2. Lock preventivo (Pessimistic Locking)
+    if (!lock.tryLock(10000)) {
+      throw new Error("Il sistema è occupato da un'altra operazione. Riprovare tra pochi secondi.");
     }
+
+    const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    const sheet = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+    const data = sheet.getDataRange().getValues();
+
+    let rowIndex = -1;
+    let transazione = null;
+
+    // 3. Ricerca Transazione
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][COL_MAP.BUDGET_TRANS.ID_TRANS]) === String(id)) {
+        rowIndex = i + 1;
+        transazione = data[i];
+        break;
+      }
+    }
+
+    if (rowIndex === -1) throw new Error("Transazione non trovata nel database.");
+
+    // 4. Verifiche di Dominio (Integrità)
+    const idCedente = String(transazione[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+    const statoAttuale = transazione[COL_MAP.BUDGET_TRANS.STATO];
+
+    if (idCedente !== idIstituzione) {
+      throw new Error("Accesso negato: Solo l'istituzione cedente autorizzata può approvare o rifiutare i fondi.");
+    }
+    
+    if (statoAttuale !== 'INVIATA' && statoAttuale !== 'IN_INTEGRAZIONE') {
+      throw new Error(`Operazione bloccata: La pratica si trova in uno stato irreversibile (${statoAttuale}).`);
+    }
+
+    if (azione !== 'ACCETTATA' && azione !== 'RIFIUTATA') {
+      throw new Error("Codice azione non valido.");
+    }
+
+    // 5. Aggiornamento Payload (Audit Log su JSON_BLOB)
+    let payload = {};
+    try {
+      payload = JSON.parse(transazione[COL_MAP.BUDGET_TRANS.JSON_BLOB]);
+    } catch(e) { payload = { history: [] }; }
+
+    payload.history = payload.history || [];
+    payload.history.push({
+      timestamp: new Date().toISOString(),
+      attore: userCtx.username,
+      ruolo_attore: "CEDENTE",
+      azione: azione,
+      note: `La richiesta è stata ${azione.toLowerCase()} dall'istituzione cedente.`
+    });
+
+    // 6. Scrittura transazionale su Google Sheets
+    sheet.getRange(rowIndex, COL_MAP.BUDGET_TRANS.STATO + 1).setValue(azione);
+    sheet.getRange(rowIndex, COL_MAP.BUDGET_TRANS.JSON_BLOB + 1).setValue(JSON.stringify(payload));
+    
+    Logger.log(`[AUDIT] Budget ${azione} | Transazione: ${id} | Operatore: ${userCtx.username}`);
+    SpreadsheetApp.flush();
+    
+    return { success: true };
+    
+  } catch(e) {
+    Logger.log("[ERROR] updateBudgetRequestStatus: " + e.message);
+    return { success: false, message: e.message };
+  } finally {
+    lock.releaseLock();
   }
-  
-  throw new Error("ID Richiesta non trovato nel database.");
+}
+
+/**
+ * Job Notturno: Sincronizzazione Export Budget (BUDGET_TRANS -> BUDGET_EXP).
+ * Ottimizzato con Early Exit (Timestamp) e inserimento incrementale.
+ */
+function syncBudgetExportTable() {
+  const lock = LockService.getScriptLock();
+  try {
+    // Zero Trust: Timeout 30s per concorrenza
+    if (!lock.tryLock(30000)) {
+      Logger.log("[JOB BUDGET] Impossibile acquisire il lock. Job saltato.");
+      return;
+    }
+
+    const fileBudget = DriveApp.getFileById(DB_CONFIG.ID_BUDGET);
+    const lastModifiedTime = fileBudget.getLastUpdated().getTime();
+    
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const lastSyncTime = parseInt(scriptProperties.getProperty('BUDGET_LAST_SYNC_TIME')) || 0;
+
+    // Early Exit: fermiamo il job se il file non è stato toccato
+    if (lastModifiedTime <= lastSyncTime) {
+      Logger.log("[JOB BUDGET] Nessuna modifica rilevata al DB Budget dall'ultima esecuzione. Early Exit.");
+      return;
+    }
+
+    const ssBudget = SpreadsheetApp.open(fileBudget);
+    const sheetBase = ssBudget.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
+    const sheetTrans = ssBudget.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+    const sheetExp = ssBudget.getSheetByName(DB_CONFIG.SHEET_BUDGET_EXP);
+
+    // 1. Caricamento Anagrafica e Saldi
+    const baseData = sheetBase.getDataRange().getValues();
+    const mapBalances = {};
+    const mapNames = {};
+    for (let b = 1; b < baseData.length; b++) {
+      const id = String(baseData[b][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]);
+      mapBalances[id] = parseFloat(baseData[b][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
+      mapNames[id] = baseData[b][COL_MAP.BUDGET_BASE.DENOMINAZIONE];
+    }
+
+    // 2. Recupero ID_TRANS già esportati
+    const lastRowExp = sheetExp.getLastRow();
+    const exportedIds = new Set();
+    if (lastRowExp > 1) {
+      // Assumendo che ID_TRANS sia alla colonna J (Indice 9, quindi colonna 10 del foglio)
+      const existingIds = sheetExp.getRange(2, COL_MAP.BUDGET_EXP.ID_TRANS + 1, lastRowExp - 1, 1).getValues();
+      existingIds.forEach(row => exportedIds.add(String(row[0])));
+    }
+
+// 3. Elaborazione sequenziale transazioni
+    const transData = sheetTrans.getDataRange().getValues();
+    const rowsToExport = [];
+
+    for (let t = 1; t < transData.length; t++) {
+      const idTrans = String(transData[t][COL_MAP.BUDGET_TRANS.ID_TRANS]);
+      const reqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]);
+      const cedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]);
+      const stato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+      
+      // FILTRO: Solo scambi confermati
+      if (stato !== 'ACCETTATA') continue;
+
+      const payload = JSON.parse(transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB] || "{}");
+      const importo = parseFloat(payload.importo_richiesto) || 0;
+
+      // Cattura residui Ante (Stato prima di questa transazione)
+      const anteCed = mapBalances[cedId] || 0;
+      const anteReq = mapBalances[reqId] || 0;
+
+      // AGGIORNAMENTO SALDI: Applichiamo l'effetto dello scambio al registro temporaneo
+      mapBalances[cedId] -= importo;
+      mapBalances[reqId] += importo;
+
+      // Cattura residui Post (Stato dopo questa transazione)
+      const postCed = mapBalances[cedId] || 0;
+      const postReq = mapBalances[reqId] || 0;
+
+      // IDEMPOTENZA: Aggiungiamo alla lista di scrittura solo se non è già nell'export
+      if (!exportedIds.has(idTrans)) {
+        rowsToExport.push([
+          cedId, 
+          mapNames[cedId] || cedId, 
+          anteCed, 
+          postCed,
+          reqId, 
+          mapNames[reqId] || reqId, 
+          anteReq, 
+          postReq,
+          importo,
+          idTrans 
+        ]);
+      }
+    }
+
+    // 4. Scrittura Massiva Finale
+    if (rowsToExport.length > 0) {
+      sheetExp.getRange(lastRowExp + 1, 1, rowsToExport.length, rowsToExport[0].length).setValues(rowsToExport);
+      SpreadsheetApp.flush();
+      Logger.log(`[JOB BUDGET] Success: Esportate ${rowsToExport.length} nuove occorrenze.`);
+    } else {
+      Logger.log("[JOB BUDGET] Nessuna nuova occorrenza trovata da esportare.");
+    }
+
+    // Aggiorna il timestamp di successo
+    scriptProperties.setProperty('BUDGET_LAST_SYNC_TIME', new Date().getTime().toString());
+
+  } catch (e) {
+    Logger.log("[ERRORE CRITICO JOB BUDGET] " + e.message);
+  } finally {
+    lock.releaseLock();
+  }
 }

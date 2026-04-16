@@ -278,7 +278,10 @@ function renderUserView(stats, transazioni) {
             <td class="text-end fw-bold">€ ${formatMoney(t.importo)}</td>
             <td>${renderStatoBadge(t.stato)}</td>
             <td class="text-center">
-               ${t.stato === 'INVIATA' && t.tipo === 'RICEVUTA' ? `<button class="btn btn-sm btn-success rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'ACCETTA')"><i class="fas fa-check me-1"></i>Accetta</button>` : ''}
+                  ${t.stato === 'INVIATA' && t.tipo === 'RICEVUTA' ? `
+                   <button class="btn btn-sm btn-success rounded-pill shadow-sm me-1" onclick="gestisciRichiesta('${t.id}', 'ACCETTATA')"><i class="fas fa-check me-1"></i>Accetta</button>
+                   <button class="btn btn-sm btn-danger rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'RIFIUTATA')"><i class="fas fa-times me-1"></i>Rifiuta</button>
+               ` : ''}
             </td>
         </tr>
     `).join('');
@@ -407,21 +410,24 @@ function getBadgeColor(stato) {
  * @param {string} azione - 'ACCETTATA' o 'RIFIUTATA'
  */
 function gestisciRichiesta(id, azione) {
-    const conferma = confirm(`Sei sicuro di voler segnare questa richiesta come ${azione}?`);
+    const labelAzione = azione === 'ACCETTATA' ? 'accettare' : 'rifiutare';
+    const conferma = confirm(`Sei sicuro di voler ${labelAzione} questa richiesta?`);
     if (!conferma) return;
 
-    // Feedback visivo (opzionale: disabilitare pulsanti)
-    console.log(`Esecuzione azione ${azione} su ID ${id}`);
+    mostraLoading(true);
 
     google.script.run
         .withSuccessHandler((response) => {
-            Swal.fire('Operazione Completata', `Richiesta ${azione} con successo.`, 'success');
-            caricaDatiBudget(); // Refresh della tabella
+            if(response.success) {
+                showToast(`Richiesta ${azione.toLowerCase()} con successo.`, 'success');
+                caricaDashboard(); // Refresh dinamico dei saldi e tabella
+            } else {
+                mostraLoading(false);
+                showToast(response.message, 'error');
+            }
         })
-        .withFailureHandler((error) => {
-            Swal.fire('Errore di Sistema', error.message, 'error');
-        })
-        .updateBudgetRequestStatus(id, azione);
+        .withFailureHandler(errorHandler)
+        .updateBudgetRequestStatus(getAuthToken(), id, azione);
 }
 
 </script>
