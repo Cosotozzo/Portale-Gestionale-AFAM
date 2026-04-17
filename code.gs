@@ -776,10 +776,16 @@ for (var i = 1; i < dataAnag.length; i++) {
     
     var salt = generateUUID();
     var passwordHash = hashPassword(formObject.password, salt);
+// Formattiamo la data del momento esatto per il tracciato DB
+    var timestampConsenso = Utilities.formatDate(new Date(), "Europe/Rome", "dd/MM/yyyy HH:mm:ss");
+    var privacyLog = formObject.privacyConsent ? "ACCETTATO - " + timestampConsenso : "NON ACCETTATO";
+    var cookieLog = formObject.cookieConsent ? "ACCETTATO - " + timestampConsenso : "NON ACCETTATO";
+
+    // Salvataggio: Mappiamo Privacy su Colonna Q (17) e Cookie su Colonna R (18)
     sheetCred.appendRow([
         generateUUID(), userWhitelist.cf, userWhitelist.idIstituzione, userWhitelist.nome, userWhitelist.cognome, 
         String(formObject.email).trim(), passwordHash, salt, userWhitelist.ruolo, pin, '', 
-        'IN_ATTESA_DI_APPROVAZIONE', new Date(), '', '', '', ''
+        'IN_ATTESA_DI_APPROVAZIONE', new Date(), '', '', '', privacyLog, cookieLog
     ]);
     return { success: true, message: "Registrazione inviata. Attendi approvazione." };
   } catch(e) { return { success: false, message: "Errore: " + e.message }; }
@@ -1169,9 +1175,10 @@ function getBudgetDashboardData(token) {
         var myBudgetBase = mapIstituzioni[myIstId] ? mapIstituzioni[myIstId].budgetBase : 0;
         var entrate = 0; var uscitePendenza = 0; var usciteAccettate = 0;
         var myTrans = [];
-        
-var countRichiesteAttive = 0;
-        var countScambiConclusi = 0;
+
+        var countRichiesteAttive = 0;
+        var countScambiAccettati = 0;
+        var countScambiRifiutati = 0;
 
         for (var t=1; t<transData.length; t++) {
             var reqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
@@ -1182,7 +1189,8 @@ var countRichiesteAttive = 0;
                 var rawJson = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
                 
                 var payload = {};
-                try { payload = JSON.parse(rawJson); } catch(e){}
+                // Questo try-catch interno è corretto e non dà problemi
+                try { payload = JSON.parse(rawJson); } catch(e){} 
                 var importo = parseFloat(payload.importo_richiesto) || 0;
                 var histDate = (payload.history && payload.history.length > 0) ? payload.history[0].timestamp : "";
                 var dataFormattata = histDate ? Utilities.formatDate(new Date(histDate), "Europe/Rome", "dd/MM/yyyy") : "";
@@ -1198,8 +1206,10 @@ var countRichiesteAttive = 0;
                 // Calcolo statistiche visive per i riquadri
                 if (stato === 'INVIATA' || stato === 'IN_INTEGRAZIONE' || stato === 'BOZZA_CEDENTE') {
                     countRichiesteAttive++;
-                } else if (stato === 'ACCETTATA' || stato === 'RIFIUTATA' || stato === 'ANNULLATA_MINISTERO') {
-                    countScambiConclusi++;
+                } else if (stato === 'ACCETTATA') {
+                    countScambiAccettati++;
+                } else if (stato === 'RIFIUTATA') {
+                    countScambiRifiutati++;
                 }
 
                 myTrans.push({
@@ -1210,7 +1220,7 @@ var countRichiesteAttive = 0;
             }
         }
         
-        return {
+return {
             success: true, 
             isAdmin: false,
             stats: { 
@@ -1219,25 +1229,18 @@ var countRichiesteAttive = 0;
                 uscitePendenti: (usciteAccettate + uscitePendenza), 
                 saldoDisponibile: (myBudgetBase + entrate - usciteAccettate - uscitePendenza),
                 richiesteAttive: countRichiesteAttive,
-                scambiConclusi: countScambiConclusi
+                scambiAccettati: countScambiAccettati,
+                scambiRifiutati: countScambiRifiutati
             },
             transazioni: myTrans, 
             istituzioni: listIstituzioni
         };
         
-        return {
-            success: true, 
-            isAdmin: false,
-            stats: { 
-                saldoIniziale: myBudgetBase, 
-                entrateAccettate: entrate, 
-                uscitePendenti: (usciteAccettate + uscitePendenza), 
-                saldoDisponibile: (myBudgetBase + entrate - usciteAccettate - uscitePendenza) 
-            },
-            transazioni: myTrans, 
-            istituzioni: listIstituzioni
-        };
-    }
+// INIZIO MODIFICA
+    } // <-- Aggiunta chiusura del blocco 'else'
+// FINE MODIFICA
+
+// La parentesi chiusa prima di catch chiude esattamente il try aperto in alto
   } catch (e) { 
     return { success: false, message: "Errore Dashboard: " + e.message };
   }

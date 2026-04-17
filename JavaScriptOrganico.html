@@ -199,9 +199,9 @@ function renderAdminView(report) {
     
     let html = '';
     report.forEach(row => {
-        html += `
-        <tr>
-            <td class="fw-bold">${row.nome}</td>
+html += `
+        <tr data-scambio="${row.valoreScambio}">
+            <td class="fw-bold text-start">${row.nome}</td>
             <td class="text-end">€ ${formatMoney(row.budgetBase)}</td>
             <td class="text-end ${row.valoreScambio >= 0 ? 'text-success' : 'text-danger'}">€ ${formatMoney(row.valoreScambio)}</td>
             <td class="text-end fw-bold">€ ${formatMoney(row.residuo)}</td>
@@ -220,11 +220,28 @@ function renderAdminView(report) {
  * Filtro tabella Admin (Live Search)
  */
 function filtraTabellaAdmin() {
-    const input = document.getElementById('filtroIstituzioniAdmin').value.toLowerCase();
+const input = document.getElementById('filtroIstituzioniAdmin').value.toLowerCase();
+    const selectScambio = document.getElementById('filtroScambioAdmin');
+    const filtroScambio = selectScambio ? selectScambio.value : 'ALL';
+    
     const rows = document.querySelectorAll('#tbodyMinisteroBudget tr');
+    
     rows.forEach(row => {
         const text = row.innerText.toLowerCase();
-        row.style.display = text.includes(input) ? '' : 'none';
+        const matchTesto = text.includes(input);
+        
+        const valoreScambio = parseFloat(row.getAttribute('data-scambio')) || 0;
+        let matchScambio = true;
+        
+        if (filtroScambio === 'POS') {
+            matchScambio = valoreScambio > 0;
+        } else if (filtroScambio === 'NEG') {
+            matchScambio = valoreScambio < 0;
+        } else if (filtroScambio === 'ANY') {
+            matchScambio = valoreScambio !== 0;
+        }
+        
+        row.style.display = (matchTesto && matchScambio) ? '' : 'none';
     });
 }
 
@@ -273,18 +290,20 @@ function renderUserView(stats, transazioni) {
     const tbody = document.getElementById('tbodyIstituzioneBudget');
     if (!tbody) return;
 
-    tbody.innerHTML = transazioni.map(t => `
-        <tr class="text-center">
-            <td>${t.data}</td>
-            <td class="fw-bold">${t.partner}</td>
-            <td><span class="badge ${t.tipo === 'INVIATA' ? 'bg-primary' : 'bg-info'}">${t.tipo}</span></td>
-            <td class="fw-bold">€ ${formatMoney(t.importo)}</td>
-            <td>${renderStatoBadge(t.stato)}</td>
-            <td>
+tbody.innerHTML = transazioni.map(t => `
+        <tr class="text-center align-middle" style="height: 60px;">
+            <td class="align-middle">${t.data}</td>
+            <td class="fw-bold align-middle">${t.partner}</td>
+            <td class="align-middle"><span class="badge ${t.tipo === 'INVIATA' ? 'bg-primary' : 'bg-info'}">${t.tipo}</span></td>
+            <td class="fw-bold align-middle">€ ${formatMoney(t.importo)}</td>
+            <td class="align-middle">${renderStatoBadge(t.stato)}</td>
+            <td class="align-middle">
                   ${t.stato === 'INVIATA' && t.tipo === 'RICEVUTA' ? `
-                   <button class="btn btn-sm btn-success rounded-pill shadow-sm me-1" onclick="gestisciRichiesta('${t.id}', 'ACCETTATA')"><i class="fas fa-check me-1"></i>Accetta</button>
-                   <button class="btn btn-sm btn-danger rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'RIFIUTATA')"><i class="fas fa-times me-1"></i>Rifiuta</button>
-               ` : ''}
+                   <div class="d-flex justify-content-center align-items-center gap-1">
+                       <button class="btn btn-sm btn-success rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'ACCETTATA')"><i class="fas fa-check"></i></button>
+                       <button class="btn btn-sm btn-danger rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'RIFIUTATA')"><i class="fas fa-times"></i></button>
+                   </div>
+               ` : '-'}
             </td>
         </tr>
     `).join('');

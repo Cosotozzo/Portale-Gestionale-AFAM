@@ -423,7 +423,11 @@ function submitRegistration() {
      const inst = document.getElementById('institution-select').value;
      if (!inst) return showToast("Compilare i campi", 'error');
 
-     // NUOVO CONTROLLO DI SICUREZZA
+// Validazione consensi espliciti (Zero Trust Client-side)
+     if (!document.getElementById('reg-privacy').checked || !document.getElementById('reg-cookie').checked) {
+         return showToast("È obbligatorio accettare Privacy e Cookie per procedere con la registrazione.", 'warning');
+     }
+
      // Verifica se la funzione di validazione esiste e se la password è valida
      if (typeof window.isPasswordValid === 'function' && !window.isPasswordValid()) {
          return showToast("La password non soddisfa i requisiti di sicurezza.", 'error');
@@ -439,7 +443,9 @@ function submitRegistration() {
          codiceFiscale: document.getElementById('reg-cf').value, 
          email: document.getElementById('reg-email').value, 
          pin: document.getElementById('reg-pin').value, 
-         password: document.getElementById('reg-pass').value 
+         password: document.getElementById('reg-pass').value,
+         privacyConsent: true,
+         cookieConsent: true
      };
 
      google.script.run
