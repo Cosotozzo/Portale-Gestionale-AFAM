@@ -225,6 +225,61 @@ function updateUserInterface(user) {
           btn.classList.add('bg-success');
           btn.innerText = "Conferma";
           btn.onclick = executeSend;
+
+      } else if (type === 'PRIVACY') {
+          headerBg.className = baseHeaderClass + " bg-info";
+          title.innerHTML = '<i class="fas fa-user-shield me-2 text-white"></i><span class="text-white">Informativa Privacy</span>';
+          body.innerHTML = `
+            <div class='text-start fs-6' style='max-height: 400px; overflow-y: auto; padding-right: 10px;'>
+                <p><strong>Informativa sul Trattamento dei Dati Personali (Privacy Policy)</strong></p>
+                <p><strong>Titolare del Trattamento</strong><br>
+                Il Titolare del trattamento è il Ministero dell'Università e della Ricerca (MUR), con sede in Roma. I dati sono trattati esclusivamente per lo svolgimento delle funzioni istituzionali legate alla gestione e programmazione dell'anno accademico per le istituzioni dell'Alta Formazione Artistica, Musicale e Coreutica (AFAM).</p>
+                
+                <p><strong>Finalità del Trattamento</strong><br>
+                I dati raccolti attraverso questo portale sono finalizzati unicamente a:</p>
+                <ul>
+                    <li>Consentire lo scambio di informazioni propedeutiche all'avvio dell'anno accademico tra il Ministero e le Istituzioni.</li>
+                    <li>Gestire le procedure amministrative e la programmazione didattica.</li>
+                    <li>Fornire assistenza tecnica e comunicazioni di servizio agli operatori istituzionali.</li>
+                </ul>
+                
+                <p><strong>Base Giuridica</strong><br>
+                Il trattamento è necessario per l'esecuzione di un compito di interesse pubblico o connesso all'esercizio di pubblici poteri di cui è investito il Titolare (Art. 6, lett. e del GDPR).</p>
+                
+                <p><strong>Modalità e Sicurezza</strong><br>
+                I dati saranno trattati esclusivamente da personale autorizzato, con l’ausilio di strumenti informatici idonei a garantirne la riservatezza e la sicurezza. I dati non saranno oggetto di diffusione né saranno ceduti a soggetti terzi per finalità commerciali o di profilazione. Eventuali comunicazioni a soggetti pubblici avverranno solo se previsto da norme di legge o regolamento.</p>
+                
+                <p><strong>Conservazione dei Dati</strong><br>
+                I dati saranno conservati per il tempo strettamente necessario al conseguimento delle finalità istituzionali e per i periodi stabiliti dalla normativa sulla conservazione dei documenti amministrativi.</p>
+            </div>`;
+          sub.innerText = "";
+          btn.classList.add('bg-primary');
+          btn.innerText = "Ho letto e Accetto";
+          btn.onclick = () => {
+              const chk = document.getElementById('reg-privacy');
+              if(chk) { chk.disabled = false; chk.checked = true; }
+              genericModalInstance.hide();
+          };
+} else if (type === 'COOKIE') {
+          headerBg.className = baseHeaderClass + " bg-secondary";
+          title.innerHTML = '<i class="fas fa-cookie-bite me-2 text-white"></i><span class="text-white">Informativa Cookie</span>';
+          body.innerHTML = `
+            <div class='text-start fs-6'>
+                <p><strong>Informativa Tecnica sull'uso dei Cookie</strong></p>
+                <p>Il presente Portale utilizza esclusivamente cookie tecnici necessari per garantire la corretta navigazione e la fruizione dei servizi riservati alle Istituzioni AFAM.</p>
+                <p>Nello specifico, vengono utilizzati:</p>
+                <ul>
+                    <li><strong>Cookie di sessione:</strong> indispensabili per gestire l'autenticazione dell'utente e l'accesso alle aree riservate. Non vengono memorizzati in modo persistente.</li>
+                    <li><strong>Cookie di funzionalità:</strong> utilizzati per memorizzare preferenze di visualizzazione al fine di migliorare l'esperienza d'uso.</li>
+                </ul>
+                <p class="small text-muted">Poiché questi cookie sono strettamente necessari, la loro installazione non richiede il consenso preventivo dell'utente (Linee guida Garante 10 giugno 2021). L'eventuale disabilitazione tramite browser potrebbe rendere il Portale inutilizzabile.</p>
+            </div>`;
+          sub.innerText = "";
+          btn.className = "btn btn-secondary w-100";
+          btn.innerText = "Chiudi";
+          btn.onclick = () => { genericModalInstance.hide(); };
+          genericModalInstance.show();
+// FINE MODIFICA
       }
       
       genericModalInstance = new bootstrap.Modal(modalEl);
