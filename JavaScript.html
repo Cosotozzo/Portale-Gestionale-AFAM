@@ -275,11 +275,13 @@ function updateUserInterface(user) {
                 <p class="small text-muted">Poiché questi cookie sono strettamente necessari, la loro installazione non richiede il consenso preventivo dell'utente (Linee guida Garante 10 giugno 2021). L'eventuale disabilitazione tramite browser potrebbe rendere il Portale inutilizzabile.</p>
             </div>`;
           sub.innerText = "";
-          btn.className = "btn btn-secondary w-100";
-          btn.innerText = "Chiudi";
-          btn.onclick = () => { genericModalInstance.hide(); };
-          genericModalInstance.show();
-// FINE MODIFICA
+ btn.className = "btn rounded-pill px-5 fw-bold text-white bg-primary";
+          btn.innerText = "Ho letto e Accetto";
+          btn.onclick = () => { 
+              const chk = document.getElementById('reg-cookie');
+              if(chk) { chk.disabled = false; chk.checked = true; }
+              genericModalInstance.hide(); 
+          };
       }
       
       genericModalInstance = new bootstrap.Modal(modalEl);
