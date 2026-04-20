@@ -191,7 +191,7 @@ function updateUserInterface(user) {
   function goToReset() { showView('view-reset'); loadInstitutionsForReset(); }
 
   // --- MODALE GENERICA ---
-function openGenericModal(type, isReadOnly = false) {
+function openGenericModal(type, isReadOnly = false, isMandatory = false) {
       const modalEl = document.getElementById('genericModal');
       const headerBg = document.getElementById('modal-header-bg');
       const title = document.getElementById('modal-title');
@@ -247,11 +247,16 @@ function openGenericModal(type, isReadOnly = false) {
               btn.innerText = "Chiudi";
               btn.onclick = () => genericModalInstance.hide();
           } else {
-              btn.innerText = "Ho letto e Accetto";
+btn.innerText = "Ho letto e Accetto";
               btn.onclick = () => {
-                  const chk = document.getElementById('reg-privacy');
-                  if(chk) { chk.disabled = false; chk.checked = true; }
-                  genericModalInstance.hide();
+                  if (isMandatory) {
+                      window.mandPrivacyAccepted = true;
+                      openGenericModal('MANDATORY_PRIVACY');
+                  } else {
+                      const chk = document.getElementById('reg-privacy');
+                      if(chk) { chk.disabled = false; chk.checked = true; }
+                      genericModalInstance.hide();
+                  }
               };
           }
 
@@ -271,38 +276,42 @@ function openGenericModal(type, isReadOnly = false) {
               btn.innerText = "Chiudi";
               btn.onclick = () => genericModalInstance.hide();
           } else {
-              btn.innerText = "Ho letto e Accetto";
+btn.innerText = "Ho letto e Accetto";
               btn.onclick = () => { 
-                  const chk = document.getElementById('reg-cookie');
-                  if(chk) { chk.disabled = false; chk.checked = true; }
-                  genericModalInstance.hide(); 
+                  if (isMandatory) {
+                      window.mandCookieAccepted = true;
+                      openGenericModal('MANDATORY_PRIVACY');
+                  } else {
+                      const chk = document.getElementById('reg-cookie');
+                      if(chk) { chk.disabled = false; chk.checked = true; }
+                      genericModalInstance.hide(); 
+                  }
               };
           }
       } else if (type === 'MANDATORY_PRIVACY') {
           headerBg.className = baseHeaderClass + " bg-warning";
           title.innerHTML = '<i class="fas fa-exclamation-triangle me-2 text-dark"></i><span class="text-dark">Aggiornamento Informative</span>';
-          body.innerHTML = `
+body.innerHTML = `
             <div class='text-start fs-6 p-2'>
                 <p class="fw-bold">Per continuare a utilizzare il portale è obbligatorio accettare le informative aggiornate.</p>
                 <div class="mb-3 form-check text-start">
-                    <input type="checkbox" class="form-check-input border-secondary" id="mand-privacy">
+                    <input type="checkbox" class="form-check-input border-secondary" id="mand-privacy" disabled ${window.mandPrivacyAccepted ? 'checked' : ''}>
                     <label class="form-check-label small text-dark" for="mand-privacy">
-                        Dichiaro di aver preso visione dell'informativa sulla Privacy e acconsento al trattamento.
+                        Dichiaro di aver letto l'<a href="#" onclick="openGenericModal('PRIVACY', false, true); return false;" class="text-decoration-underline fw-bold text-dark">informativa sulla privacy</a> e acconsento al trattamento.
                     </label>
                 </div>
                 <div class="mb-3 form-check text-start">
-                    <input type="checkbox" class="form-check-input border-secondary" id="mand-cookie">
+                    <input type="checkbox" class="form-check-input border-secondary" id="mand-cookie" disabled ${window.mandCookieAccepted ? 'checked' : ''}>
                     <label class="form-check-label small text-dark" for="mand-cookie">
-                        Accetto l'utilizzo dei cookie tecnici strettamente necessari.
+                        Accetto l'utilizzo dei <a href="#" onclick="openGenericModal('COOKIE', false, true); return false;" class="text-decoration-underline fw-bold text-dark">cookie</a> tecnici strettamente necessari.
                     </label>
                 </div>
-                <p class="small text-muted mt-3 mb-0"><i class="fas fa-info-circle me-1"></i>I testi completi delle informative sono consultabili nel footer del sito in basso a destra.</p>
             </div>`;
           sub.innerText = "";
           btn.classList.add('bg-primary');
           btn.innerText = "Accetta e Continua";
           btn.onclick = () => {
-              if(!document.getElementById('mand-privacy').checked || !document.getElementById('mand-cookie').checked) {
+if(!document.getElementById('mand-privacy').checked || !document.getElementById('mand-cookie').checked) {
                   return showToast("Devi spuntare entrambe le caselle per proseguire.", "warning");
               }
               toggleLoading(true);
@@ -310,7 +319,16 @@ function openGenericModal(type, isReadOnly = false) {
                   .withSuccessHandler(res => {
                       toggleLoading(false);
                       if (res.success) {
-                          genericModalInstance.hide();
+                          if (genericModalInstance) genericModalInstance.hide();
+                          
+                          // 1. PULIZIA FORZATA DEI BACKDROP MULTIPLI (Fix Schermata Nera)
+                          document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+                          
+                          // 2. SBLOCCO DELLO SCROLL DELLA PAGINA
+                          document.body.classList.remove('modal-open');
+                          document.body.style.overflow = '';
+                          document.body.style.paddingRight = '';
+
                           showView('view-gateway');
                           showToast("Preferenze salvate con successo.", "success");
                       } else {
@@ -322,16 +340,23 @@ function openGenericModal(type, isReadOnly = false) {
           };
       }
       
+      // 3. DISTRUZIONE ISTANZA PRECEDENTE (Previene memory leaks e sovrapposizioni)
+      if (genericModalInstance) {
+          genericModalInstance.dispose();
+      }
+      
       genericModalInstance = new bootstrap.Modal(modalEl, { backdrop: type === 'MANDATORY_PRIVACY' ? 'static' : true, keyboard: type !== 'MANDATORY_PRIVACY' });
       genericModalInstance.show();
-  }
 
   function executeLogout() {
       // 1. FERMA MONITORAGGIO
       stopInactivityMonitor();
 
       // 2. PULIZIA STORAGE
-      sessionStorage.removeItem('AFAM_SESSION_TOKEN');
+sessionStorage.removeItem('AFAM_SESSION_TOKEN');
+      
+      window.mandPrivacyAccepted = false;
+      window.mandCookieAccepted = false;
 
       if(genericModalInstance) genericModalInstance.hide();
       
