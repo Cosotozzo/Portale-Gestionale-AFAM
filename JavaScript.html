@@ -319,8 +319,9 @@ if(!document.getElementById('mand-privacy').checked || !document.getElementById(
                   .withSuccessHandler(res => {
                       toggleLoading(false);
                       if (res.success) {
-                          if (genericModalInstance) genericModalInstance.hide();
-                          
+if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null) {
+                             try { genericModalInstance.hide(); } catch(e){}
+                          }
                           // 1. PULIZIA FORZATA DEI BACKDROP MULTIPLI (Fix Schermata Nera)
                           document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
                           
@@ -348,6 +349,8 @@ if(!document.getElementById('mand-privacy').checked || !document.getElementById(
       genericModalInstance = new bootstrap.Modal(modalEl, { backdrop: type === 'MANDATORY_PRIVACY' ? 'static' : true, keyboard: type !== 'MANDATORY_PRIVACY' });
       genericModalInstance.show();
 
+  }
+
   function executeLogout() {
       // 1. FERMA MONITORAGGIO
       stopInactivityMonitor();
@@ -358,7 +361,13 @@ sessionStorage.removeItem('AFAM_SESSION_TOKEN');
       window.mandPrivacyAccepted = false;
       window.mandCookieAccepted = false;
 
-      if(genericModalInstance) genericModalInstance.hide();
+if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null) {
+          try {
+              genericModalInstance.hide();
+          } catch(e) {
+              console.warn("Errore chiusura modale:", e);
+          }
+      }
       
       const token = currentUser.token;
       currentUser = {}; 

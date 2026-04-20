@@ -975,7 +975,7 @@ function syncExportTable() {
 
   } catch(e) {
     Logger.log("Errore Critico SyncExport: " + e.toString());
-  } finally {
+} finally {
     lock.releaseLock();
   }
 }
