@@ -131,15 +131,16 @@ function verifySessionAndGetUser(token) {
       sheetCred.getRange(rowIndex, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date());
     } catch(e){}
 
-    const userObj = {
+const userObj = {
       rowIndex: rowIndex,
       username: rowData[COL_MAP.CRED.USERNAME],
       istituzioneId: rowData[COL_MAP.CRED.ISTITUZIONE_ID],
       ruolo: rowData[COL_MAP.CRED.RUOLO],
       nome: rowData[COL_MAP.CRED.NOME],
-      cognome: rowData[COL_MAP.CRED.COGNOME]
+      cognome: rowData[COL_MAP.CRED.COGNOME],
+      privacyLog: rowData[COL_MAP.CRED.ACCETTAZIONE_PRIVACY],
+      cookieLog: rowData[COL_MAP.CRED.ACCETTAZIONE_COOKIE]
     };
-    
     // 3. SALVA IN CACHE PER 20 MINUTI (1200 secondi)
     cache.put("SESSION_" + token, JSON.stringify(userObj), 1200);
     return userObj;
@@ -159,15 +160,17 @@ function restoreSession(token) {
     var userCtx = verifySessionAndGetUser(token);
     
     // Ricostruiamo l'oggetto utente per il frontend
-    return {
+return {
       success: true,
       token: token,
       username: userCtx.username,
-      role: userCtx.ruolo, // Mappa 'ruolo' su 'role' per il frontend
+      role: userCtx.ruolo,
       nome: userCtx.nome,
       cognome: userCtx.cognome,
       istituzioneId: userCtx.istituzioneId,
-      istituzioneNome: getInstitutionNameById(userCtx.istituzioneId)
+      istituzioneNome: getInstitutionNameById(userCtx.istituzioneId),
+      privacyAccepted: String(userCtx.privacyLog || "").includes("ACCETTATO"),
+      cookieAccepted: String(userCtx.cookieLog || "").includes("ACCETTATO")
     };
   } catch (e) {
     // Se la sessione è scaduta o invalida, il frontend dovrà fare logout
@@ -245,7 +248,9 @@ return {
       nome: targetUser[COL_MAP.CRED.NOME], 
       cognome: targetUser[COL_MAP.CRED.COGNOME], 
       istituzioneId: targetUser[COL_MAP.CRED.ISTITUZIONE_ID],
-      istituzioneNome: getInstitutionNameById(targetUser[COL_MAP.CRED.ISTITUZIONE_ID])
+      istituzioneNome: getInstitutionNameById(targetUser[COL_MAP.CRED.ISTITUZIONE_ID]),
+      privacyAccepted: String(targetUser[COL_MAP.CRED.ACCETTAZIONE_PRIVACY] || "").includes("ACCETTATO"),
+      cookieAccepted: String(targetUser[COL_MAP.CRED.ACCETTAZIONE_COOKIE] || "").includes("ACCETTATO")
     };
 
   } catch (e) {
@@ -1626,6 +1631,41 @@ function syncBudgetExportTable() {
 
   } catch (e) {
     Logger.log("[ERRORE CRITICO JOB BUDGET] " + e.message);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Registra l'accettazione di Privacy e Cookie per gli utenti esistenti che non l'avevano firmata.
+ */
+function updatePrivacyCookieAcceptance(token) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    var userCtx = verifySessionAndGetUser(token);
+    
+    var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+    var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
+    
+    var timestampConsenso = Utilities.formatDate(new Date(), "Europe/Rome", "dd/MM/yyyy HH:mm:ss");
+    var privacyLog = "ACCETTATO - " + timestampConsenso;
+    var cookieLog = "ACCETTATO - " + timestampConsenso;
+    
+    // Aggiornamento sul foglio (Colonne Q e R - indici 17 e 18)
+    sheetCred.getRange(userCtx.rowIndex, COL_MAP.CRED.ACCETTAZIONE_PRIVACY + 1).setValue(privacyLog);
+    sheetCred.getRange(userCtx.rowIndex, COL_MAP.CRED.ACCETTAZIONE_COOKIE + 1).setValue(cookieLog);
+    
+    // Aggiornamento Cache
+    userCtx.privacyLog = privacyLog;
+    userCtx.cookieLog = cookieLog;
+    CacheService.getScriptCache().put("SESSION_" + token, JSON.stringify(userCtx), 1200);
+    
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch (e) {
+    Logger.log("Errore salvataggio privacy: " + e.message);
+    return { success: false, message: e.message };
   } finally {
     lock.releaseLock();
   }

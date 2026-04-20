@@ -31,29 +31,27 @@ const MODULES_CONFIG = {
 // FINE MODIFICA
   });
 
-  function checkStoredSession() {
+function checkStoredSession() {
       const storedToken = sessionStorage.getItem('AFAM_SESSION_TOKEN');
-      
-      // Se non c'è token, l'utente deve fare login manualmente
       if (!storedToken) return;
 
       toggleLoading(true);
-      
-      // Tentativo di ripristino sessione lato server
       google.script.run
         .withSuccessHandler(res => {
             toggleLoading(false);
             if (res.success) {
-                // Sessione valida: Ripristina utente e vista
                 currentUser = res;
                 updateUserInterface(res);
-                showView('view-gateway');
-                showToast("Bentornato/a: " + res.nome + " " + res.cognome, 'success');
-                
-                // AVVIO MONITORAGGIO INATTIVITÀ
                 startInactivityMonitor();
+                
+                // Controllo accettazione Privacy vecchi utenti
+                if (!res.privacyAccepted || !res.cookieAccepted) {
+                    openGenericModal('MANDATORY_PRIVACY');
+                } else {
+                    showView('view-gateway');
+                    showToast("Bentornato/a: " + res.nome + " " + res.cognome, 'success');
+                }
             } else {
-                // Token scaduto o invalido lato server
                 console.warn("Sessione non valida");
                 executeLogout(); 
             }
@@ -193,7 +191,7 @@ function updateUserInterface(user) {
   function goToReset() { showView('view-reset'); loadInstitutionsForReset(); }
 
   // --- MODALE GENERICA ---
-  function openGenericModal(type) {
+function openGenericModal(type, isReadOnly = false) {
       const modalEl = document.getElementById('genericModal');
       const headerBg = document.getElementById('modal-header-bg');
       const title = document.getElementById('modal-title');
@@ -234,7 +232,6 @@ function updateUserInterface(user) {
                 <p><strong>Informativa sul Trattamento dei Dati Personali (Privacy Policy)</strong></p>
                 <p><strong>Titolare del Trattamento</strong><br>
                 Il Titolare del trattamento è il Ministero dell'Università e della Ricerca (MUR), con sede in Roma. I dati sono trattati esclusivamente per lo svolgimento delle funzioni istituzionali legate alla gestione e programmazione dell'anno accademico per le istituzioni dell'Alta Formazione Artistica, Musicale e Coreutica (AFAM).</p>
-                
                 <p><strong>Finalità del Trattamento</strong><br>
                 I dati raccolti attraverso questo portale sono finalizzati unicamente a:</p>
                 <ul>
@@ -242,49 +239,90 @@ function updateUserInterface(user) {
                     <li>Gestire le procedure amministrative e la programmazione didattica.</li>
                     <li>Fornire assistenza tecnica e comunicazioni di servizio agli operatori istituzionali.</li>
                 </ul>
-                
-                <p><strong>Base Giuridica</strong><br>
-                Il trattamento è necessario per l'esecuzione di un compito di interesse pubblico o connesso all'esercizio di pubblici poteri di cui è investito il Titolare (Art. 6, lett. e del GDPR).</p>
-                
-                <p><strong>Modalità e Sicurezza</strong><br>
-                I dati saranno trattati esclusivamente da personale autorizzato, con l’ausilio di strumenti informatici idonei a garantirne la riservatezza e la sicurezza. I dati non saranno oggetto di diffusione né saranno ceduti a soggetti terzi per finalità commerciali o di profilazione. Eventuali comunicazioni a soggetti pubblici avverranno solo se previsto da norme di legge o regolamento.</p>
-                
-                <p><strong>Conservazione dei Dati</strong><br>
-                I dati saranno conservati per il tempo strettamente necessario al conseguimento delle finalità istituzionali e per i periodi stabiliti dalla normativa sulla conservazione dei documenti amministrativi.</p>
             </div>`;
           sub.innerText = "";
           btn.classList.add('bg-primary');
-          btn.innerText = "Ho letto e Accetto";
-          btn.onclick = () => {
-              const chk = document.getElementById('reg-privacy');
-              if(chk) { chk.disabled = false; chk.checked = true; }
-              genericModalInstance.hide();
-          };
-} else if (type === 'COOKIE') {
+          
+          if (isReadOnly) {
+              btn.innerText = "Chiudi";
+              btn.onclick = () => genericModalInstance.hide();
+          } else {
+              btn.innerText = "Ho letto e Accetto";
+              btn.onclick = () => {
+                  const chk = document.getElementById('reg-privacy');
+                  if(chk) { chk.disabled = false; chk.checked = true; }
+                  genericModalInstance.hide();
+              };
+          }
+
+      } else if (type === 'COOKIE') {
           headerBg.className = baseHeaderClass + " bg-secondary";
           title.innerHTML = '<i class="fas fa-cookie-bite me-2 text-white"></i><span class="text-white">Informativa Cookie</span>';
           body.innerHTML = `
             <div class='text-start fs-6'>
                 <p><strong>Informativa Tecnica sull'uso dei Cookie</strong></p>
                 <p>Il presente Portale utilizza esclusivamente cookie tecnici necessari per garantire la corretta navigazione e la fruizione dei servizi riservati alle Istituzioni AFAM.</p>
-                <p>Nello specifico, vengono utilizzati:</p>
-                <ul>
-                    <li><strong>Cookie di sessione:</strong> indispensabili per gestire l'autenticazione dell'utente e l'accesso alle aree riservate. Non vengono memorizzati in modo persistente.</li>
-                    <li><strong>Cookie di funzionalità:</strong> utilizzati per memorizzare preferenze di visualizzazione al fine di migliorare l'esperienza d'uso.</li>
-                </ul>
-                <p class="small text-muted">Poiché questi cookie sono strettamente necessari, la loro installazione non richiede il consenso preventivo dell'utente (Linee guida Garante 10 giugno 2021). L'eventuale disabilitazione tramite browser potrebbe rendere il Portale inutilizzabile.</p>
+                <p class="small text-muted">Poiché questi cookie sono strettamente necessari, la loro installazione non richiede il consenso preventivo dell'utente.</p>
             </div>`;
           sub.innerText = "";
- btn.className = "btn rounded-pill px-5 fw-bold text-white bg-primary";
-          btn.innerText = "Ho letto e Accetto";
-          btn.onclick = () => { 
-              const chk = document.getElementById('reg-cookie');
-              if(chk) { chk.disabled = false; chk.checked = true; }
-              genericModalInstance.hide(); 
+          btn.className = "btn rounded-pill px-5 fw-bold text-white bg-primary";
+          
+          if (isReadOnly) {
+              btn.innerText = "Chiudi";
+              btn.onclick = () => genericModalInstance.hide();
+          } else {
+              btn.innerText = "Ho letto e Accetto";
+              btn.onclick = () => { 
+                  const chk = document.getElementById('reg-cookie');
+                  if(chk) { chk.disabled = false; chk.checked = true; }
+                  genericModalInstance.hide(); 
+              };
+          }
+      } else if (type === 'MANDATORY_PRIVACY') {
+          headerBg.className = baseHeaderClass + " bg-warning";
+          title.innerHTML = '<i class="fas fa-exclamation-triangle me-2 text-dark"></i><span class="text-dark">Aggiornamento Informative</span>';
+          body.innerHTML = `
+            <div class='text-start fs-6 p-2'>
+                <p class="fw-bold">Per continuare a utilizzare il portale è obbligatorio accettare le informative aggiornate.</p>
+                <div class="mb-3 form-check text-start">
+                    <input type="checkbox" class="form-check-input border-secondary" id="mand-privacy">
+                    <label class="form-check-label small text-dark" for="mand-privacy">
+                        Dichiaro di aver preso visione dell'informativa sulla Privacy e acconsento al trattamento.
+                    </label>
+                </div>
+                <div class="mb-3 form-check text-start">
+                    <input type="checkbox" class="form-check-input border-secondary" id="mand-cookie">
+                    <label class="form-check-label small text-dark" for="mand-cookie">
+                        Accetto l'utilizzo dei cookie tecnici strettamente necessari.
+                    </label>
+                </div>
+                <p class="small text-muted mt-3 mb-0"><i class="fas fa-info-circle me-1"></i>I testi completi delle informative sono consultabili nel footer del sito in basso a destra.</p>
+            </div>`;
+          sub.innerText = "";
+          btn.classList.add('bg-primary');
+          btn.innerText = "Accetta e Continua";
+          btn.onclick = () => {
+              if(!document.getElementById('mand-privacy').checked || !document.getElementById('mand-cookie').checked) {
+                  return showToast("Devi spuntare entrambe le caselle per proseguire.", "warning");
+              }
+              toggleLoading(true);
+              google.script.run
+                  .withSuccessHandler(res => {
+                      toggleLoading(false);
+                      if (res.success) {
+                          genericModalInstance.hide();
+                          showView('view-gateway');
+                          showToast("Preferenze salvate con successo.", "success");
+                      } else {
+                          showToast(res.message, "error");
+                      }
+                  })
+                  .withFailureHandler(handleServerError)
+                  .updatePrivacyCookieAcceptance(currentUser.token);
           };
       }
       
-      genericModalInstance = new bootstrap.Modal(modalEl);
+      genericModalInstance = new bootstrap.Modal(modalEl, { backdrop: type === 'MANDATORY_PRIVACY' ? 'static' : true, keyboard: type !== 'MANDATORY_PRIVACY' });
       genericModalInstance.show();
   }
 
@@ -323,7 +361,7 @@ function updateUserInterface(user) {
       saveCessazioniAction('FINAL');
   }
 
-  // --- LOGIN ---
+// --- LOGIN ---
   const loginForm = document.getElementById('login-form');
   if(loginForm) {
       loginForm.addEventListener('submit', function(e) {
@@ -334,17 +372,15 @@ function updateUserInterface(user) {
             toggleLoading(false);
             if (res.success) {
               currentUser = res;
-              
-              // 1. SALVA TOKEN PER F5
               sessionStorage.setItem('AFAM_SESSION_TOKEN', res.token);
-              
-              // 2. AGGIORNA INTERFACCIA
               updateUserInterface(res);
-              
-              // 3. AVVIA TIMER INATTIVITÀ
               startInactivityMonitor();
 
-              showView('view-gateway');
+              if (!res.privacyAccepted || !res.cookieAccepted) {
+                  openGenericModal('MANDATORY_PRIVACY');
+              } else {
+                  showView('view-gateway');
+              }
             } else { showToast(res.message, 'error'); }
           })
           .withFailureHandler(handleServerError).doLogin(this);
