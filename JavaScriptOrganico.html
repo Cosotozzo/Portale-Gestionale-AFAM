@@ -290,23 +290,42 @@ function renderUserView(stats, transazioni) {
     const tbody = document.getElementById('tbodyIstituzioneBudget');
     if (!tbody) return;
 
-tbody.innerHTML = transazioni.map(t => `
-        <tr class="text-center align-middle" style="height: 60px;">
-            <td class="align-middle">${t.data}</td>
-            <td class="fw-bold align-middle">${t.partner}</td>
-            <td class="align-middle"><span class="badge ${t.tipo === 'INVIATA' ? 'bg-primary' : 'bg-info'}">${t.tipo}</span></td>
-            <td class="fw-bold align-middle">€ ${formatMoney(t.importo)}</td>
-            <td class="align-middle">${renderStatoBadge(t.stato)}</td>
-            <td class="align-middle">
-                  ${t.stato === 'INVIATA' && t.tipo === 'RICEVUTA' ? `
-                   <div class="d-flex justify-content-center align-items-center gap-1">
-                       <button class="btn btn-sm btn-success rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'ACCETTATA')"><i class="fas fa-check"></i></button>
-                       <button class="btn btn-sm btn-danger rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'RIFIUTATA')"><i class="fas fa-times"></i></button>
-                   </div>
-               ` : '-'}
-            </td>
-        </tr>
-    `).join('');
+    tbody.innerHTML = transazioni.map(t => {
+        let actionsHtml = '<div class="d-flex justify-content-center align-items-center gap-1">';
+        let hasActions = false;
+
+        // Se l'istituzione ha ricevuto la richiesta e la richiesta è ancora nello stato INVIATA
+        if (t.stato === 'INVIATA' && t.tipo === 'RICEVUTA') {
+            actionsHtml += `
+                <button class="btn btn-sm btn-success rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'ACCETTATA')" title="Accetta"><i class="fas fa-check"></i></button>
+                <button class="btn btn-sm btn-danger rounded-pill shadow-sm" onclick="gestisciRichiesta('${t.id}', 'RIFIUTATA')" title="Rifiuta"><i class="fas fa-times"></i></button>
+            `;
+            hasActions = true;
+        }
+
+        // Se la richiesta non è rifiutata e non è stata annullata, l'utente può annullarla (Bottone giallo)
+        if (t.stato !== 'RIFIUTATA' && !t.stato.includes('ANNULLATA')) {
+            actionsHtml += `
+                <button class="btn btn-sm btn-warning rounded-pill shadow-sm text-dark" onclick="handleAnnullaP2P('${t.id}')" title="Annulla Transazione"><i class="fas fa-undo"></i></button>
+            `;
+            hasActions = true;
+        }
+
+        actionsHtml += '</div>';
+
+        return `
+            <tr class="text-center align-middle" style="height: 60px;">
+                <td class="align-middle">${t.data}</td>
+                <td class="fw-bold align-middle">${t.partner}</td>
+                <td class="align-middle"><span class="badge ${t.tipo === 'INVIATA' ? 'bg-primary' : 'bg-info'}">${t.tipo}</span></td>
+                <td class="fw-bold align-middle">€ ${formatMoney(t.importo)}</td>
+                <td class="align-middle">${renderStatoBadge(t.stato)}</td>
+                <td class="align-middle">
+                    ${hasActions ? actionsHtml : '-'}
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 /**
@@ -324,9 +343,10 @@ function renderStatoBadge(stato) {
         'INVIATA': 'bg-secondary',
         'ACCETTATA': 'bg-success',
         'RIFIUTATA': 'bg-danger',
-        'ANNULLATA_MINISTERO': 'bg-warning text-dark'
+        'ANNULLATA_MINISTERO': 'bg-warning text-dark',
+        'ANNULLATA_ISTITUTO': 'bg-warning text-dark'
     };
-    return `<span class="badge ${map[stato] || 'bg-light'}">${stato}</span>`;
+    return `<span class="badge ${map[stato] || 'bg-light text-dark'}">${stato}</span>`;
 }
 
 /**
@@ -422,6 +442,7 @@ function getBadgeColor(stato) {
         case 'RIFIUTATA': return 'danger';
         case 'IN ATTESA': return 'warning text-dark';
         case 'ANNULLATA_MINISTERO': return 'secondary';
+        case 'ANNULLATA_ISTITUTO': return 'secondary';
         default: return 'primary';
     }
 }
@@ -450,6 +471,33 @@ function gestisciRichiesta(id, azione) {
         })
         .withFailureHandler(errorHandler)
         .updateBudgetRequestStatus(getAuthToken(), id, azione);
+}
+
+/**
+ * INIZIO NUOVA MODIFICA: Gestisce l'annullamento P2P di una transazione
+ * @param {string} idTrans - ID univoco della transazione
+ */
+function handleAnnullaP2P(idTrans) {
+    const conferm = confirm("Sei sicuro di voler annullare questa transazione? L'operazione restituirà il budget se già accettata.");
+    if (!conferm) return;
+
+    mostraLoading(true);
+
+    google.script.run
+        .withSuccessHandler(function(response) {
+            mostraLoading(false);
+            if (response && response.success !== false) { // Se non c'è .success o è true
+                showToast(response.message || "Transazione annullata con successo.", "success");
+                caricaDashboard(); // Refresh dinamico dei saldi e tabella
+            } else {
+                showToast(response.message || "Errore sconosciuto.", "error");
+            }
+        })
+        .withFailureHandler(function(error) {
+            mostraLoading(false);
+            showToast("Errore: " + error.message, "error");
+        })
+        .annullaTransazioneIstituzione(idTrans); // Assicurati di aver implementato questa funzione nel tuo Code.gs
 }
 
 </script>
