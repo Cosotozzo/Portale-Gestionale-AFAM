@@ -128,11 +128,22 @@
                           <label class="form-label fw-bold text-muted small">NOTE (OPZIONALE)</label>
                           <textarea class="form-control" id="inputNote" rows="2" placeholder="Eventuale motivazione o dettaglio..."></textarea>
                       </div>
-                      <div class="mb-3 form-check text-start mt-3">
-                          <input type="checkbox" class="form-check-input" id="checkDelibera" required>
-                          <label class="form-check-label small text-muted" for="checkDelibera">
-                              Si conferma che la quota di budget di organico oggetto del presente scambio corrisponde a quanto deliberato dagli Organi con delibera di variazione di organico dell'Istituzione
+<div class="mb-3 p-3 bg-light shadow-sm rounded-custom border d-flex align-items-center mt-3">
+                          <input type="checkbox" id="checkDelibera" required 
+                                 style="width: 1.5em; height: 1.5em; margin-right: 15px; flex-shrink: 0; cursor: pointer; border: 1px solid #adb5bd; border-radius: 4px; appearance: none; -webkit-appearance: none; outline: none !important; box-shadow: none !important; background-color: #fff;">
+                          <label class="fw-bold text-dark m-0 small" for="checkDelibera" style="cursor: pointer; user-select: none;">
+                              Si conferma che la quota di budget di organico oggetto del presente scambio corrisponde a quanto deliberato dagli Organi con delibera di variazione di organico dell'Istituzione.
                           </label>
+                          <style>
+                              #checkDelibera:checked {
+                                  background-color: #0066cc !important;
+                                  border-color: #0066cc !important;
+                                  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e") !important;
+                                  background-size: contain;
+                                  background-position: center;
+                                  background-repeat: no-repeat;
+                              }
+                          </style>
                       </div>
                       </form>
                 </div>
