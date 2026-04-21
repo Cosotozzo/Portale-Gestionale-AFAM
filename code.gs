@@ -1329,94 +1329,89 @@ function toggleScambioBudget(token, newState) {
 }
 
 /**
- * API RPC: Permette al Ministero di annullare un'operazione precedentemente accettata.
- * Calcola in tempo reale la capienza per prevenire scoperti in caso di annullamenti non sequenziali.
+ * Esegue l'annullamento con protezione per Ministero e Admin (Rollback Condizionato)
+ * @param {string} token - Token JWT/Sessione
+ * @param {string} idTrans - ID Univoco della Transazione
+ * @returns {object} Oggetto con esito operazione
  */
 function annullaTransazioneMinistero(token, idTrans) {
-  var lock = LockService.getScriptLock();
-  try {
-    var userCtx = verifySessionAndGetUser(token);
-    var ruolo = String(userCtx.ruolo).toUpperCase().trim();
-    if (ruolo !== 'ADMIN' && ruolo !== 'MINISTERO') throw new Error("Azione non consentita.");
+    // ---------------- 1. VALIDAZIONE PERMESSI (La nostra modifica) ----------------
+    const userData = validazioneToken(token);
+    const RUOLI_PRIVILEGIATI = ['ADMIN', 'MINISTERO'];
 
-    if (!lock.tryLock(15000)) throw new Error("Il sistema è momentaneamente occupato. Riprovare.");
+    if (!userData || !RUOLI_PRIVILEGIATI.includes(userData.ruolo)) {
+        Logger.log(`[SECURITY] Tentativo di annullamento illegale da parte di: ${userData ? userData.email : 'Sconosciuto'}`);
+        throw new Error("Autorizzazione insufficiente: Funzione riservata al Ministero o Admin.");
+    }
+    
+    Logger.log(`[ROLLBACK] Avvio procedura per ID: ${idTrans} richiesto da ${userData.ruolo}`);
 
-    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
-    var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
-var searchRange = sheetTrans.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheetTrans.getLastRow(), 1);
-    var finder = searchRange.createTextFinder(idTrans).matchEntireCell(true);
-    var result = finder.findNext();
+    // ---------------- 2. LOGICA DI PROTEZIONE E ROLLBACK (Codice successivo) ----------------
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetTransazioni = ss.getSheetByName("Budget_Transazioni");
+    const dataTransazioni = sheetTransazioni.getDataRange().getValues();
+    const headersTransazioni = dataTransazioni[0];
     
-    if (!result) throw new Error("Transazione non trovata.");
-
-    var targetRowIdx = result.getRow();
-    var transazione = sheetTrans.getRange(targetRowIdx, 1, 1, sheetTrans.getLastColumn()).getValues()[0];
+    // Mappatura dinamica colonne
+    const colIdTrans = headersTransazioni.indexOf('ID_TRANS');
+    const colStato = headersTransazioni.indexOf('STATO');
+    const colIdRichiedente = headersTransazioni.indexOf('ID_ISTITUZIONE_RICHIEDENTE');
+    const colImporto = headersTransazioni.indexOf('IMPORTO_RICHIESTO');
+    const colNote = headersTransazioni.indexOf('NOTE');
     
-    // Caricamento del dataset completo utile successivamente solo per il ricalcolo saldi dinamico
-    var transData = sheetTrans.getDataRange().getValues();
-    if (transazione[COL_MAP.BUDGET_TRANS.STATO] !== 'ACCETTATA') throw new Error("Solo le operazioni ACCETTATE possono essere riaperte.");
+    // Trova la transazione
+    let rigaTransazione = -1;
+    let transazione = null;
     
-    var reqId = String(transazione[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
-    var payloadRaw = transazione[COL_MAP.BUDGET_TRANS.JSON_BLOB];
-    var payload = JSON.parse(payloadRaw);
-    var importo = parseFloat(payload.importo_richiesto);
-    
-    // VALIDAZIONE SEQUENZIALE: Ricalcolo Saldo Attuale del Richiedente (Colui che ha ricevuto i fondi)
-    var sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
-    var baseData = sheetBase.getDataRange().getValues();
-    var reqBudgetBase = 0;
-    
-    for(var b = 1; b < baseData.length; b++) {
-        if(String(baseData[b][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === reqId) {
-            reqBudgetBase = parseFloat(baseData[b][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
+    for (let i = 1; i < dataTransazioni.length; i++) {
+        if (dataTransazioni[i][colIdTrans] === idTrans) {
+            rigaTransazione = i + 1; // +1 perché l'indice array è 0-based, le righe sheet sono 1-based
+            transazione = dataTransazioni[i];
             break;
         }
     }
     
-    var reqCurrentBalance = reqBudgetBase;
+    if (rigaTransazione === -1) {
+        throw new Error("Transazione non trovata.");
+    }
     
-    for (var t = 1; t < transData.length; t++) {
-        if (transData[t][COL_MAP.BUDGET_TRANS.STATO] === 'ACCETTATA') {
-            var tReqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
-            var tCedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
-            var tPayload = JSON.parse(transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB]);
-            var tImporto = parseFloat(tPayload.importo_richiesto) || 0;
-            
-            if (tReqId === reqId) reqCurrentBalance += tImporto;
-            if (tCedId === reqId) reqCurrentBalance -= tImporto;
+    if (transazione[colStato] !== 'ACCETTATA') {
+        throw new Error("Solo le transazioni in stato ACCETTATA possono essere annullate.");
+    }
+    
+    const idRichiedente = transazione[colIdRichiedente];
+    const importo = parseFloat(transazione[colImporto]);
+    
+    // Lettura budget attuale dell'Acquirente per controllo Scoperto
+    const sheetBudget = ss.getSheetByName("Budget_Organico");
+    const dataBudget = sheetBudget.getDataRange().getValues();
+    const headersBudget = dataBudget[0];
+    
+    const colCodiceIst = headersBudget.indexOf('CODICE_ISTITUZIONE');
+    const colBudgetDisp = headersBudget.indexOf('BUDGET_DISPONIBILE');
+    
+    let saldoDisponibile = 0;
+    
+    for (let i = 1; i < dataBudget.length; i++) {
+        if (dataBudget[i][colCodiceIst] === idRichiedente) {
+            saldoDisponibile = parseFloat(dataBudget[i][colBudgetDisp] || 0);
+            break;
         }
     }
     
-    // Check Critico: Se annullare questa operazione manda il ricevente sotto zero
-    if ((reqCurrentBalance - importo) < 0) {
-        Logger.log("[SECURITY] Annullamento bloccato per Scoperto di Bilancio. Istituzione ID: " + reqId);
-        throw new Error("La riapertura deve essere sequenziale dall'ultima operazione fino alla prima.");
+    // Algoritmo di Protezione Rollback
+    if ((saldoDisponibile - importo) < 0) {
+        Logger.log(`[ROLLBACK NEGATO] ID: ${idTrans}. L'istituzione ${idRichiedente} andrebbe in scoperto (Saldo attuale: ${saldoDisponibile}, Importo da stornare: ${importo}).`);
+        throw new Error("Impossibile annullare: l'istituzione ha già impegnato i fondi acquisiti in scambi successivi. Saldo insufficiente per la restituzione.");
     }
     
-    // Scrittura aggiornamento
-    var now = new Date().toISOString();
-    payload.history.push({
-        timestamp: now,
-        attore: userCtx.username,
-        ruolo_attore: ruolo,
-        azione: "ANNULLAMENTO_MINISTERO",
-        note: "Operazione annullata dal Ministero per riapertura termini."
-    });
+    // Esecuzione del Rollback: aggiorna stato
+    sheetTransazioni.getRange(rigaTransazione, colStato + 1).setValue('ANNULLATA_MINISTERO');
+    sheetTransazioni.getRange(rigaTransazione, colNote + 1).setValue(`Annullata da ${userData.ruolo} in data ${new Date().toLocaleDateString('it-IT')}`);
     
-    sheetTrans.getRange(targetRowIdx, COL_MAP.BUDGET_TRANS.STATO + 1).setValue("ANNULLATA_MINISTERO");
-    sheetTrans.getRange(targetRowIdx, COL_MAP.BUDGET_TRANS.JSON_BLOB + 1).setValue(JSON.stringify(payload));
+    Logger.log(`[ROLLBACK COMPLETATO] Transazione ${idTrans} annullata con successo.`);
     
-    Logger.log("[AUDIT] Transazione " + idTrans + " annullata dal Ministero (" + userCtx.username + ")");
-    SpreadsheetApp.flush();
-    
-    return { success: true };
-    
-  } catch (e) {
-    Logger.log("Errore annullaTransazioneMinistero: " + e.message);
-    return { success: false, message: e.message };
-  } finally {
-    lock.releaseLock();
-  }
+    return { success: true, message: "Transazione annullata. I fondi sono stati stornati." };
 }
 
 /**
@@ -1474,7 +1469,8 @@ function getStoricoIstituzione(token, idIstituzione) {
                 tipoTransazione = isRichiedente ? "RICHIESTA INVIATA" : "RICHIESTA RICEVUTA";
             }
 
-            storico.push({
+        storico.push({
+                idTrans: transData[t][COL_MAP.BUDGET_TRANS.ID_TRANS],
                 data: dataFormattata,
                 tipo: tipoTransazione,
                 importo: importo,

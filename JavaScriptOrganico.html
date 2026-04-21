@@ -404,28 +404,40 @@ window.visualizzaDettaglioAdmin = function(idIstituzione) {
         .getStoricoIstituzione(getAuthToken(), idIstituzione); 
 };
 
-/**
- * Funzione di appoggio per iniettare l'HTML nella modale
+* Funzione di appoggio per iniettare l'HTML nella modale
+ * Gestisce sia ADMIN che MINISTERO
  */
-function renderTabellaDettagliAdmin(storico) {
+function renderTabellaDettagliAdmin(storico, userRole) {
     const tbody = document.getElementById('bodyTabellaDettagliAdmin');
     if (!tbody) return;
     
+// INIZIO MODIFICA
+    // Definiamo i ruoli che hanno accesso alle funzioni di annullamento
+    const isAuthorized = (userRole === 'ADMIN' || userRole === 'MINISTERO');
+    
     if (!storico || storico.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nessuna transazione trovata per questa istituzione.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${isAuthorized ? 6 : 5}" class="text-center">Nessuna transazione trovata.</td></tr>`;
         return;
     }
     
-    // Genera le righe dello storico
     let html = '';
     storico.forEach(req => {
+        let actionsHtml = '';
+        if (isAuthorized) {
+            // Se autorizzato, mostriamo il pulsante solo se lo stato è ACCETTATA
+            actionsHtml = (req.stato === 'ACCETTATA') 
+                ? `<button class="btn btn-sm btn-outline-danger" onclick="handleAnnullaMinistero('${req.idTrans}')" title="Annulla Transazione"><i class="fas fa-undo"></i></button>`
+                : `<span class="text-muted small">-</span>`;
+        }
+
         html += `
             <tr>
-                <td>${req.data || '-'}</td>
+                <td class="px-3">${req.data || '-'}</td>
                 <td>${req.tipo || '-'}</td>
                 <td>€ ${req.importo ? Number(req.importo).toLocaleString('it-IT') : '0'}</td>
                 <td>${req.controparte || '-'}</td>
-                <td><span class="badge bg-${getBadgeColor(req.stato)}">${req.stato}</span></td>
+                <td class="text-center"><span class="badge bg-${getBadgeColor(req.stato)}">${req.stato}</span></td>
+                ${isAuthorized ? `<td class="text-center">${actionsHtml}</td>` : ''}
             </tr>
         `;
     });
@@ -498,6 +510,42 @@ function handleAnnullaP2P(idTrans) {
             showToast("Errore: " + error.message, "error");
         })
         .annullaTransazioneIstituzione(getAuthToken(), idTrans);
+}
+
+/**
+ * Gestisce l'annullamento di una transazione lato Ministero (Rollback)
+ * @param {string} idTrans - ID univoco della transazione
+ */
+function handleAnnullaMinistero(idTrans) {
+    const conferm = confirm("Sei sicuro di voler annullare questa transazione?\nL'operazione restituirà i fondi e lo stato passerà ad ANNULLATA_MINISTERO.");
+    if (!conferm) return;
+
+    mostraLoading(true);
+
+    google.script.run
+        .withSuccessHandler(function(response) {
+            mostraLoading(false);
+            if (response && response.success !== false) {
+                showToast("Transazione annullata con successo dal Ministero.", "success");
+                
+                // Chiude la modale Dettagli
+                const modalEl = document.getElementById('modalDettagliAdmin');
+                if (modalEl) {
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) modalInstance.hide();
+                }
+                
+                // Aggiorna tutta la view per ricalcolare i saldi globali
+                caricaDashboard(); 
+            } else {
+                showToast(response.message || "Errore durante l'annullamento della transazione.", "error");
+            }
+        })
+        .withFailureHandler(function(error) {
+            mostraLoading(false);
+            showToast(error.message, "error"); // Qui verrà mostrato l'errore di Scoperto bloccato dal Back-end
+        })
+        .annullaTransazioneMinistero(getAuthToken(), idTrans);
 }
 
 </script>
