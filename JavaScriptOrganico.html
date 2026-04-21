@@ -474,7 +474,7 @@ function gestisciRichiesta(id, azione) {
 }
 
 /**
- * INIZIO NUOVA MODIFICA: Gestisce l'annullamento P2P di una transazione
+ * Gestisce l'annullamento P2P di una transazione
  * @param {string} idTrans - ID univoco della transazione
  */
 function handleAnnullaP2P(idTrans) {
@@ -497,7 +497,7 @@ function handleAnnullaP2P(idTrans) {
             mostraLoading(false);
             showToast("Errore: " + error.message, "error");
         })
-        .annullaTransazioneIstituzione(idTrans); // Assicurati di aver implementato questa funzione nel tuo Code.gs
+        .annullaTransazioneIstituzione(getAuthToken(), idTrans);
 }
 
 </script>

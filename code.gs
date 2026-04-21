@@ -43,7 +43,7 @@ const CURRENT_ENV = getEnvironmentConfig();
 var DB_CONFIG = {
   // Database IDs (Dinamici)
   "MASTER_ID": CURRENT_ENV.MASTER_ID,
-  "ID_BUDGET": CURRENT_ENV.ID_BUDGETORGANICO,
+  "ID_BUDGETORGANICO": CURRENT_ENV.ID_BUDGETORGANICO,
   "ID_CESSAZIONI": CURRENT_ENV.ID_CESSAZIONI,
   
   // Nomi Fogli Master
@@ -1047,7 +1047,7 @@ var lock = LockService.getScriptLock();
         throw new Error("Importo non valido.");
     }
 
-    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
     var sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
     var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
 
@@ -1147,7 +1147,7 @@ function getBudgetDashboardData(token) {
     var isAdmin = (ruolo === 'ADMIN' || ruolo === 'MINISTERO');
     var myIstId = String(userCtx.istituzioneId);
     
-    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
 var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
     
     // Ottimizzazione: Lettura Anagrafica Base con Caching Distribuito
@@ -1341,7 +1341,7 @@ function annullaTransazioneMinistero(token, idTrans) {
 
     if (!lock.tryLock(15000)) throw new Error("Il sistema è momentaneamente occupato. Riprovare.");
 
-    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
     var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
 var searchRange = sheetTrans.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheetTrans.getLastRow(), 1);
     var finder = searchRange.createTextFinder(idTrans).matchEntireCell(true);
@@ -1433,7 +1433,7 @@ function getStoricoIstituzione(token, idIstituzione) {
         throw new Error("Accesso negato: Permessi insufficienti.");
     }
 
-    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
     var sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
     var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
 
@@ -1511,7 +1511,7 @@ function updateBudgetRequestStatus(token, id, azione) {
       throw new Error("Il sistema è occupato da un'altra operazione. Riprovare tra pochi secondi.");
     }
 
-    const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
     const sheet = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
 const searchRange = sheet.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheet.getLastRow(), 1);
     const finder = searchRange.createTextFinder(id).matchEntireCell(true);
@@ -1584,7 +1584,7 @@ function syncBudgetExportTable() {
       return;
     }
 
-    const fileBudget = DriveApp.getFileById(DB_CONFIG.ID_BUDGET);
+    const fileBudget = DriveApp.getFileById(DB_CONFIG.ID_BUDGETORGANICO);
     const lastModifiedTime = fileBudget.getLastUpdated().getTime();
     
     const scriptProperties = PropertiesService.getScriptProperties();
@@ -1722,15 +1722,16 @@ function updatePrivacyCookieAcceptance(token) {
 /**
  * Annulla una transazione lato Istituzione (sia richiedente che cedente)
  */
-function annullaTransazioneIstituzione(idTrans) {
-  const lock = LockService.getScriptCache(); // Uso cache per velocità o LockService per sicurezza
+function annullaTransazioneIstituzione(token, idTrans) {
   const sharedLock = LockService.getScriptLock();
-  
   try {
     if (!sharedLock.tryLock(15000)) throw new Error("Sistema occupato, riprova.");
 
-    const userCtx = getUserContext(); // Funzione esistente per identificare l'utente
-    const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGET);
+    // 1. Validazione Reale del Token
+    const userCtx = verifySessionAndGetUser(token);
+    const myIstId = String(userCtx.istituzioneId).trim();
+
+    const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
     const sheet = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
     
     // Ottimizzazione O(1) con TextFinder
@@ -1742,39 +1743,48 @@ function annullaTransazioneIstituzione(idTrans) {
     const rowIdx = cell.getRow();
     const rowData = sheet.getRange(rowIdx, 1, 1, sheet.getLastColumn()).getValues()[0];
     const stato = rowData[COL_MAP.BUDGET_TRANS.STATO];
-    const importo = parseFloat(rowData[COL_MAP.BUDGET_TRANS.IMPORTO]);
-    const idRichiedente = String(rowData[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]);
-    const idCedente = String(rowData[COL_MAP.BUDGET_TRANS.ID_CEDENTE]);
+    
+    const idRichiedente = String(rowData[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+    const idCedente = String(rowData[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
 
-    // 1. Verifica Autorizzazione: Solo le parti coinvolte possono annullare
-    if (userCtx.istituzioneId !== idRichiedente && userCtx.istituzioneId !== idCedente) {
+    // 2. Verifica Autorizzazione: Solo le parti coinvolte possono annullare
+    if (myIstId !== idRichiedente && myIstId !== idCedente) {
       throw new Error("Non sei autorizzato ad annullare questa transazione.");
     }
 
-    // 2. Verifica Stato: No se rifiutata o già annullata
+    // 3. Verifica Stato
     if (stato === 'RIFIUTATA') throw new Error("Non è possibile annullare una richiesta già rifiutata.");
     if (stato.includes('ANNULLATA')) throw new Error("La transazione è già annullata.");
-
-    // 3. Logica Rollback se ACCETTATA
     if (stato === 'ACCETTATA') {
-      // Calcolo saldo attuale di chi ha ricevuto i soldi (Richiedente/Acquirente)
-      const dashboardData = getBudgetDashboardData(); // Riutilizziamo la logica esistente
-      // Nota: getBudgetDashboardData deve essere chiamata internamente o simulata per il check saldo
-      if (dashboardData.saldoDisponibile < 0) { // Logica semplificata: il sistema calcola se togliendo l'importo si va in rosso
-         // Implementare check specifico qui
-      }
+      throw new Error("Le transazioni già ACCETTATE possono essere annullate solo dal Ministero. Contatta l'assistenza.");
     }
 
-    // 4. Esecuzione Annullamento
-    sheet.getRange(rowIdx, COL_MAP.BUDGET_TRANS.STATO + 1).setValue('ANNULLATA_ISTITUTO');
-    sheet.getRange(rowIdx, COL_MAP.BUDGET_TRANS.NOTE + 1).setValue("Annullata da: " + userCtx.istituzioneId + " il " + new Date().toLocaleString());
+    // 4. Estrazione e Aggiornamento JSON_BLOB (Audit Log)
+    let payload = {};
+    try { payload = JSON.parse(rowData[COL_MAP.BUDGET_TRANS.JSON_BLOB]); } catch(e) { payload = {history:[]}; }
     
-    Logger.log(`Transazione ${idTrans} annullata da ${userCtx.istituzioneId}`);
-    return { success: true, message: "Transazione annullata con successo." };
+    payload.history = payload.history || [];
+    payload.history.push({
+        timestamp: new Date().toISOString(),
+        attore: userCtx.username,
+        ruolo_attore: "ISTITUZIONE",
+        azione: "ANNULLAMENTO_ISTITUZIONE",
+        note: "Operazione annullata dall'istituzione (" + myIstId + ")"
+    });
 
+    // 5. Scrittura transazionale
+    sheet.getRange(rowIdx, COL_MAP.BUDGET_TRANS.STATO + 1).setValue('ANNULLATA_ISTITUTO');
+    sheet.getRange(rowIdx, COL_MAP.BUDGET_TRANS.JSON_BLOB + 1).setValue(JSON.stringify(payload));
+    
+    SpreadsheetApp.flush();
+    Logger.log(`[AUDIT] Transazione ${idTrans} annullata da ${myIstId}`);
+    
+    return { success: true, message: "Transazione annullata con successo." };
+    
   } catch (e) {
     Logger.log("Errore annullaTransazioneIstituzione: " + e.message);
-    throw e;
+    // Ritorno un oggetto d'errore pulito per il Frontend
+    return { success: false, message: e.message };
   } finally {
     sharedLock.releaseLock();
   }
