@@ -1344,10 +1344,8 @@ function toggleScambioBudget(token, newState) {
  */
 function annullaTransazioneMinistero(token, idTrans) {
     const lock = LockService.getScriptLock();
-    try {
-        if (!lock.tryLock(15000)) throw new Error("Sistema occupato, riprova.");
-
-        // 1. VALIDAZIONE PERMESSI (Zero Trust Standard)
+try {
+        // 1. VALIDAZIONE PERMESSI FUORI DAL LOCK (Previene blocchi per query non autorizzate)
         const userCtx = verifySessionAndGetUser(token);
         const ruolo = String(userCtx.ruolo).toUpperCase().trim();
         
@@ -1355,6 +1353,8 @@ function annullaTransazioneMinistero(token, idTrans) {
             Logger.log(`[SECURITY] Tentativo di annullamento illegale da: ${userCtx.username}`);
             throw new Error("Autorizzazione insufficiente: Funzione riservata al Ministero o Admin.");
         }
+        
+        if (!lock.tryLock(15000)) throw new Error("Sistema occupato, riprova.");
         
         Logger.log(`[ROLLBACK] Avvio procedura per ID: ${idTrans} richiesto da ${ruolo}`);
 
@@ -1756,13 +1756,13 @@ function updatePrivacyCookieAcceptance(token) {
  */
 function annullaTransazioneIstituzione(token, idTrans) {
   const sharedLock = LockService.getScriptLock();
-  try {
-    if (!sharedLock.tryLock(15000)) throw new Error("Sistema occupato, riprova.");
-
-    // 1. Validazione Reale del Token
+try {
+    // 1. Validazione Reale del Token SPOSTATA FUORI DAL LOCK
     const userCtx = verifySessionAndGetUser(token);
     const myIstId = String(userCtx.istituzioneId).trim();
 
+    if (!sharedLock.tryLock(15000)) throw new Error("Sistema occupato, riprova.");
+    
     const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
     const sheet = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
     

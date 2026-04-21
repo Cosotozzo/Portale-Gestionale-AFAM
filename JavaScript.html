@@ -960,21 +960,23 @@ function saveCessazioniAction(mode) {
   }
 
   function approveUser(id, action) {
-      if(!confirm(action === 'APPROVE' ? "Confermi l'attivazione dell'utente?" : "Vuoi davvero rifiutare la richiesta?")) return;
+const messaggio = action === 'APPROVE' ? "Confermi l'attivazione dell'utente?" : "Vuoi davvero rifiutare la richiesta?";
       
-      toggleLoading(true);
-      google.script.run
-        .withSuccessHandler(res => {
-            toggleLoading(false);
-            if(res.success) {
-                showToast(res.message, 'success');
-                loadPendingUsers(); 
-            } else {
-                showToast(res.message, 'error');
-            }
-        })
-        .withFailureHandler(handleServerError)
-        .updateUserStatus(currentUser.token, id, action);
+      confirmActionModal(messaggio, () => {
+          toggleLoading(true);
+          google.script.run
+            .withSuccessHandler(res => {
+                toggleLoading(false);
+                if(res.success) {
+                    showToast(res.message, 'success');
+                    loadPendingUsers(); 
+                } else {
+                    showToast(res.message, 'error');
+                }
+            })
+            .withFailureHandler(handleServerError)
+            .updateUserStatus(currentUser.token, id, action);
+      });
   }
 
 // --- FILTRO RICERCA MONITORAGGIO CESSAZIONI ---
