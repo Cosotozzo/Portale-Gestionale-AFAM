@@ -156,6 +156,13 @@ function submitRichiestaBudget() {
     const importoRaw = document.getElementById('inputImporto').value;
     const note = document.getElementById('inputNote').value;
 
+const checkDelibera = document.getElementById('checkDelibera').checked;
+
+    if (!checkDelibera) {
+        showToast("È obbligatorio confermare la delibera di variazione di organico.", "error");
+        return;
+    }
+
     // --- LOGICA MAPPING NOME -> ID ---
     const istFound = window.listaIstituzioniGlobal.find(i => i.nome === nomeSelezionato);
 
@@ -176,7 +183,8 @@ function submitRichiestaBudget() {
     const payload = {
         cedenteId: istFound.id, // Inviamo l'ID (Colonna A) al backend
         importo: importo,
-        note: note
+        note: note,
+        confermaDelibera: checkDelibera
     };
 
     mostraLoading(true);
@@ -416,7 +424,7 @@ function renderTabellaDettagliAdmin(storico, userRole) {
     if (!tbody) return;
     
 // INIZIO MODIFICA
-    // Definiamo i ruoli che hanno accesso alle funzioni di annullamento
+// Definiamo i ruoli che hanno accesso alle funzioni di annullamento
     const isAuthorized = (userRole === 'ADMIN' || userRole === 'MINISTERO');
     
     if (!storico || storico.length === 0) {
@@ -427,6 +435,16 @@ function renderTabellaDettagliAdmin(storico, userRole) {
     let html = '';
     storico.forEach(req => {
         let actionsHtml = '';
+        let tipoDisplay = req.tipo || '-';
+        let rowClass = '';
+
+        // Intercettazione e normalizzazione UX degli stati annullati
+        if (req.stato && req.stato.includes('ANNULLATA')) {
+            tipoDisplay = req.stato === 'ANNULLATA_MINISTERO' ? 'ROLLBACK MINISTERO' : 'REVOCATA ISTITUZIONE';
+            // Feedback visivo: riga opacizzata e barrata per differenziarla dalle transazioni attive
+            rowClass = 'text-muted text-decoration-line-through opacity-75'; 
+        }
+
         if (isAuthorized) {
             // Se autorizzato, mostriamo il pulsante solo se lo stato è ACCETTATA
             actionsHtml = (req.stato === 'ACCETTATA') 
@@ -435,9 +453,9 @@ function renderTabellaDettagliAdmin(storico, userRole) {
         }
 
         html += `
-            <tr>
+            <tr class="${rowClass}">
                 <td class="px-3">${req.data || '-'}</td>
-                <td>${req.tipo || '-'}</td>
+                <td class="fw-bold">${tipoDisplay}</td>
                 <td>€ ${req.importo ? Number(req.importo).toLocaleString('it-IT') : '0'}</td>
                 <td>${req.controparte || '-'}</td>
                 <td class="text-center"><span class="badge bg-${getBadgeColor(req.stato)}">${req.stato}</span></td>
