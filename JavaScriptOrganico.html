@@ -387,8 +387,11 @@ window.visualizzaDettaglioAdmin = function(idIstituzione) {
                 return;
             }
             
-            // Renderizza i dati e apri la modale (Assumendo che l'ID della modale sia 'modalDettagliAdmin')
-            renderTabellaDettagliAdmin(res.storico);
+// Estrapoliamo il ruolo dell'utente globale in modo sicuro
+            const ruoloUtente = (currentUser && currentUser.role) ? String(currentUser.role).toUpperCase().trim() : '';
+            
+            // Renderizza i dati e apri la modale passando esplicitamente il ruolo
+            renderTabellaDettagliAdmin(res.storico, ruoloUtente);
             
             const modalEl = document.getElementById('modalDettagliAdmin');
             if (modalEl) {
@@ -404,7 +407,8 @@ window.visualizzaDettaglioAdmin = function(idIstituzione) {
         .getStoricoIstituzione(getAuthToken(), idIstituzione); 
 };
 
-* Funzione di appoggio per iniettare l'HTML nella modale
+/**
+ * Funzione di appoggio per iniettare l'HTML nella modale
  * Gestisce sia ADMIN che MINISTERO
  */
 function renderTabellaDettagliAdmin(storico, userRole) {

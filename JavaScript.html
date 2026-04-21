@@ -351,6 +351,31 @@ if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null
 
   }
 
+function confirmActionModal(message, onConfirm) {
+      const modalEl = document.getElementById('genericModal');
+      const headerBg = document.getElementById('modal-header-bg');
+      const title = document.getElementById('modal-title');
+      const body = document.getElementById('modal-body-text');
+      const sub = document.getElementById('modal-sub-text');
+      const btn = document.getElementById('modal-confirm-btn');
+
+      headerBg.className = "modal-header border-0 position-relative d-flex justify-content-center align-items-center bg-warning";
+      title.innerHTML = '<i class="fas fa-question-circle me-2 text-dark"></i><span class="text-dark">Conferma Operazione</span>';
+      body.innerText = message;
+      sub.innerText = "L'operazione è definitiva e potrebbe essere irreversibile.";
+      
+      btn.className = "btn rounded-pill px-5 fw-bold text-dark bg-warning border-dark shadow-sm";
+      btn.innerText = "Procedi";
+      btn.onclick = () => {
+          if (genericModalInstance) genericModalInstance.hide();
+          if (typeof onConfirm === 'function') onConfirm();
+      };
+
+      if (genericModalInstance) genericModalInstance.dispose();
+      genericModalInstance = new bootstrap.Modal(modalEl, { backdrop: true, keyboard: true });
+      genericModalInstance.show();
+  }
+
   function executeLogout() {
       // 1. FERMA MONITORAGGIO
       stopInactivityMonitor();

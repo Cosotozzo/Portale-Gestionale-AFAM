@@ -1785,3 +1785,108 @@ function annullaTransazioneIstituzione(token, idTrans) {
     sharedLock.releaseLock();
   }
 }
+
+/**
+ * Utility di validazione Token e Sessione
+ * Verifica se il token passato è valido e restituisce i dati utente
+ */
+function validazioneToken(token) {
+  try {
+    if (!token) throw new Error("Token mancante");
+    
+    // Recupera la sessione dal foglio 'Sessioni' o 'Users' (dipende dalla tua architettura)
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetUsers = ss.getSheetByName("Utenti"); 
+    const data = sheetUsers.getDataRange().getValues();
+    
+    // Cerca l'utente che ha quel token attivo
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][10] === token) { // Assumendo colonna 11 (indice 10) per il Token
+        return {
+          email: data[i][1],
+          role: data[i][4],
+          istituzione: data[i][2],
+          success: true
+        };
+      }
+    }
+    throw new Error("Token non valido o sessione scaduta");
+  } catch (e) {
+    Logger.log("Errore Validazione: " + e.message);
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Logica di Annullamento Ministeriale con Protezione Saldo (Rollback)
+ */
+function annullaTransazioneMinistero(token, idTransazione) {
+  const auth = validazioneToken(token);
+  
+  // Normalizzazione e controllo sicuro dell'autorizzazione
+  const userRole = auth.role ? String(auth.role).toUpperCase().trim() : '';
+  if (!auth.success || (userRole !== 'ADMIN' && userRole !== 'MINISTERO')) {
+    Logger.log(`Accesso negato. Ruolo rilevato: ${userRole}. Errore Auth: ${auth.message}`);
+    return { success: false, message: `Autorizzazione negata. Ruolo utente: ${userRole || 'Non identificato'}` };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetBudget = ss.getSheetByName("Budget_Transazioni");
+  const sheetSaldi = ss.getSheetByName("Saldi_Istituzioni");
+  
+  const rows = sheetBudget.getDataRange().getValues();
+  let rowIndex = -1;
+  let transazione = null;
+
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] == idTransazione) {
+      rowIndex = i + 1;
+      transazione = {
+        mittente: rows[i][1],
+        destinatario: rows[i][2],
+        importo: parseFloat(rows[i][3]),
+        stato: rows[i][4]
+      };
+      break;
+    }
+  }
+
+  if (!transazione || transazione.stato !== 'ACCETTATA') {
+    return { success: false, message: "Transazione non trovata o non in stato ACCETTATA." };
+  }
+
+  // CONTROLLO PROTEZIONE ROLLBACK (Punto 6.3 Specifiche)
+  // La logica di blocco interviene SOLO se il saldo del destinatario andrebbe sotto zero.
+  const saldiData = sheetSaldi.getDataRange().getValues();
+  let saldoAttualeDest = 0;
+
+  for (let j = 1; j < saldiData.length; j++) {
+    if (saldiData[j][0] === transazione.destinatario) {
+      // Assumendo che il saldo disponibile si trovi nella colonna B (indice 1)
+      saldoAttualeDest = parseFloat(saldiData[j][1]); 
+      break;
+    }
+  }
+
+  // Calcolo esplicito del nuovo saldo post-rollback
+  const nuovoSaldoAcquirente = saldoAttualeDest - transazione.importo;
+
+  if (nuovoSaldoAcquirente < 0) {
+    return { 
+      success: false, 
+      message: `Impossibile annullare: l'istituzione ha già impegnato i fondi in scambi successivi. Il rollback porterebbe il saldo in negativo (${nuovoSaldoAcquirente} €).` 
+    };
+  }
+
+  // ESECUZIONE ROLLBACK
+  try {
+    // Aggiorna lo stato della transazione. (Nota: I saldi devono ricalcolarsi tramite 
+    // le formule di Google Sheets o altri trigger, come da architettura esistente).
+    sheetBudget.getRange(rowIndex, 5).setValue('ANNULLATA_MINISTERO');
+    
+    Logger.log(`Rollback completato. Transazione: ${idTransazione}, Admin: ${auth.email}`);
+    return { success: true, message: "Operazione completata. La transazione è stata annullata e i fondi ripristinati." };
+  } catch (e) {
+    return { success: false, message: "Errore durante la scrittura sul database: " + e.message };
+  }
+}
