@@ -1037,9 +1037,14 @@ var lock = LockService.getScriptLock();
     var idRichiedente = String(userCtx.istituzioneId);
     var idCedente = String(payload.cedenteId).trim();
 
-    // Pessimistic Locking come da Specifica (Cap 5)
-    if (!lock.tryLock(5000)) {
-      throw new Error("Il sistema è momentaneamente occupato. Riprovare.");
+// Security: Impedisce a un'istituzione di cedere fondi a se stessa
+    if (idRichiedente === idCedente) {
+        throw new Error("Non è possibile richiedere budget alla propria istituzione.");
+    }
+
+    // Pessimistic Locking: Timeout aumentato a 30s per scalare su 100+ occorrenze simultanee
+    if (!lock.tryLock(30000)) {
+      throw new Error("Il sistema è momentaneamente occupato a causa di un elevato numero di richieste. Riprovare tra qualche secondo.");
     }
 
     var importo = parseFloat(payload.importo);

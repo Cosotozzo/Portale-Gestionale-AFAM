@@ -488,23 +488,23 @@ function getBadgeColor(stato) {
  */
 function gestisciRichiesta(id, azione) {
     const labelAzione = azione === 'ACCETTATA' ? 'accettare' : 'rifiutare';
-    const conferma = confirm(`Sei sicuro di voler ${labelAzione} questa richiesta?`);
-    if (!conferma) return;
+// Utilizziamo la modale di piattaforma che non blocca il browser
+    confirmActionModal(`Sei sicuro di voler ${labelAzione} questa richiesta?`, () => {
+        mostraLoading(true);
 
-    mostraLoading(true);
-
-    google.script.run
-        .withSuccessHandler((response) => {
-            if(response.success) {
-                showToast(`Richiesta ${azione.toLowerCase()} con successo.`, 'success');
-                caricaDashboard(); // Refresh dinamico dei saldi e tabella
-            } else {
-                mostraLoading(false);
-                showToast(response.message, 'error');
-            }
-        })
-        .withFailureHandler(errorHandler)
-        .updateBudgetRequestStatus(getAuthToken(), id, azione);
+        google.script.run
+            .withSuccessHandler((response) => {
+                if(response.success) {
+                    showToast(`Richiesta ${azione.toLowerCase()} con successo.`, 'success');
+                    caricaDashboard(); 
+                } else {
+                    mostraLoading(false);
+                    showToast(response.message, 'error');
+                }
+            })
+            .withFailureHandler(errorHandler)
+            .updateBudgetRequestStatus(getAuthToken(), id, azione);
+    });
 }
 
 /**
@@ -512,26 +512,25 @@ function gestisciRichiesta(id, azione) {
  * @param {string} idTrans - ID univoco della transazione
  */
 function handleAnnullaP2P(idTrans) {
-    const conferm = confirm("Sei sicuro di voler annullare questa transazione? L'operazione restituirà il budget se già accettata.");
-    if (!conferm) return;
+confirmActionModal("Sei sicuro di voler annullare questa transazione? L'operazione restituirà il budget se già accettata.", () => {
+        mostraLoading(true);
 
-    mostraLoading(true);
-
-    google.script.run
-        .withSuccessHandler(function(response) {
-            mostraLoading(false);
-            if (response && response.success !== false) { // Se non c'è .success o è true
-                showToast(response.message || "Transazione annullata con successo.", "success");
-                caricaDashboard(); // Refresh dinamico dei saldi e tabella
-            } else {
-                showToast(response.message || "Errore sconosciuto.", "error");
-            }
-        })
-        .withFailureHandler(function(error) {
-            mostraLoading(false);
-            showToast("Errore: " + error.message, "error");
-        })
-        .annullaTransazioneIstituzione(getAuthToken(), idTrans);
+        google.script.run
+            .withSuccessHandler(function(response) {
+                mostraLoading(false);
+                if (response && response.success !== false) { 
+                    showToast(response.message || "Transazione annullata con successo.", "success");
+                    caricaDashboard(); 
+                } else {
+                    showToast(response.message || "Errore sconosciuto.", "error");
+                }
+            })
+            .withFailureHandler(function(error) {
+                mostraLoading(false);
+                showToast("Errore: " + error.message, "error");
+            })
+            .annullaTransazioneIstituzione(getAuthToken(), idTrans);
+    });
 }
 
 /**
@@ -539,35 +538,31 @@ function handleAnnullaP2P(idTrans) {
  * @param {string} idTrans - ID univoco della transazione
  */
 function handleAnnullaMinistero(idTrans) {
-    const conferm = confirm("Sei sicuro di voler annullare questa transazione?\nL'operazione restituirà i fondi e lo stato passerà ad ANNULLATA_MINISTERO.");
-    if (!conferm) return;
+confirmActionModal("Sei sicuro di voler annullare questa transazione?\nL'operazione restituirà i fondi e lo stato passerà ad ANNULLATA_MINISTERO.", () => {
+        mostraLoading(true);
 
-    mostraLoading(true);
-
-    google.script.run
-        .withSuccessHandler(function(response) {
-            mostraLoading(false);
-            if (response && response.success !== false) {
-                showToast("Transazione annullata con successo dal Ministero.", "success");
-                
-                // Chiude la modale Dettagli
-                const modalEl = document.getElementById('modalDettagliAdmin');
-                if (modalEl) {
-                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
-                    if (modalInstance) modalInstance.hide();
+        google.script.run
+            .withSuccessHandler(function(response) {
+                mostraLoading(false);
+                if (response && response.success !== false) {
+                    showToast("Transazione annullata con successo dal Ministero.", "success");
+                    
+                    const modalEl = document.getElementById('modalDettagliAdmin');
+                    if (modalEl) {
+                        const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                        if (modalInstance) modalInstance.hide();
+                    }
+                    caricaDashboard(); 
+                } else {
+                    showToast(response.message || "Errore durante l'annullamento della transazione.", "error");
                 }
-                
-                // Aggiorna tutta la view per ricalcolare i saldi globali
-                caricaDashboard(); 
-            } else {
-                showToast(response.message || "Errore durante l'annullamento della transazione.", "error");
-            }
-        })
-        .withFailureHandler(function(error) {
-            mostraLoading(false);
-            showToast(error.message, "error"); // Qui verrà mostrato l'errore di Scoperto bloccato dal Back-end
-        })
-        .annullaTransazioneMinistero(getAuthToken(), idTrans);
+            })
+            .withFailureHandler(function(error) {
+                mostraLoading(false);
+                showToast(error.message, "error"); 
+            })
+            .annullaTransazioneMinistero(getAuthToken(), idTrans);
+    });
 }
 
 </script>
