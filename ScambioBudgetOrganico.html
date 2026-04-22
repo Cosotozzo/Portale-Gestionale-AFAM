@@ -45,7 +45,7 @@
                     <thead class="table-light small text-muted text-uppercase">
                         <tr style="height: 50px;">
                             <th class="align-middle">Data</th>
-                            <th class="align-middle">Istituzione Partner</th>
+                            <th class="align-middle">Denominazione Istituzione</th>
                             <th class="align-middle">Tipo</th>
                             <th class="align-middle">Importo</th>
                             <th class="align-middle">Stato</th>
@@ -110,14 +110,14 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content rounded-custom border-0 shadow-lg">
                 <div class="modal-header border-bottom bg-primary p-3">
-                    <h5 class="modal-title fw-bold text-white"><i class="fas fa-paper-plane me-2"></i>Nuova Richiesta Scambio</h5>
+                    <h5 class="modal-title fw-bold text-white"><i class="fas fa-paper-plane me-2"></i>Nuova Richiesta di Scambio</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                     <div class="modal-body p-4">
                     <form id="formRichiestaBudget" onsubmit="event.preventDefault();">
                       <div class="mb-3 position-relative">
-                          <label class="form-label fw-bold text-muted small">ISTITUZIONE CEDENTE</label>
-                          <input type="text" id="cedenteInput" class="form-control" placeholder="Inizia a scrivere il nome dell'istituzione..." autocomplete="off">
+                          <label class="form-label fw-bold text-muted small">DENOMINAZIONE ISTITUZIONE</label>
+                          <input type="text" id="cedenteInput" class="form-control" placeholder="Nome dell'istituzione..." autocomplete="off">
                           <ul class="dropdown-menu w-100 shadow" id="listaIstituzioniDrop" style="max-height: 220px; overflow-y: auto;"></ul>
                       </div>
                       <div class="mb-3">

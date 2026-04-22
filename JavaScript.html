@@ -21,6 +21,9 @@ const MODULES_CONFIG = {
     'BUDGET_ORG': { status: 'DYNAMIC', action: openBudgetOrganicoModule },
     'BUDGET_ASS': { status: 'SOON', msg: 'Servizio in attivazione.' },
     'UTENZE': { status: 'ACTIVE', action: openUsersModule },
+    'BUDGET_ASS_2026/2027': { status: 'SOON', msg: 'Servizio in attivazione.' },
+        'COM_INCARICHI_EQ': { status: 'SOON', msg: 'Servizio in attivazione.' },
+    'AFAM_AI': { status: 'SOON', msg: 'Servizio in attivazione.' },
   };
 
 // --- INIZIALIZZAZIONE (Gestione F5 e Refresh) ---
@@ -617,7 +620,7 @@ function submitRegistration() {
       const inst = document.getElementById('reset-institution').value;
       if (!inst) return showToast("Compilare i campi", 'error');
       toggleLoading(true);
-      google.script.run.withSuccessHandler(res => { toggleLoading(false); if(res.success){ showToast("Password Reset Ok", 'success'); showView('view-login'); } else showToast(res.message, 'error'); }).resetPasswordByData({ institutionName: inst, cf: document.getElementById('reset-cf').value, username: document.getElementById('reset-email').value, pin: document.getElementById('reset-pin').value, newPassword: document.getElementById('reset-new-pass').value });
+      google.script.run.withSuccessHandler(res => { toggleLoading(false); if(res.success){ showToast("Ripristino Password avvenuto con successo", 'success'); showView('view-login'); } else showToast(res.message, 'error'); }).resetPasswordByData({ institutionName: inst, cf: document.getElementById('reset-cf').value, username: document.getElementById('reset-email').value, pin: document.getElementById('reset-pin').value, newPassword: document.getElementById('reset-new-pass').value });
   }
 
 function handleModuleAccess(key) {

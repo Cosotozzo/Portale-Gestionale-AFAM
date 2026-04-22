@@ -311,8 +311,8 @@ function renderUserView(stats, transazioni) {
             hasActions = true;
         }
 
-        // Se la richiesta non è rifiutata e non è stata annullata, l'utente può annullarla (Bottone giallo)
-        if (t.stato !== 'RIFIUTATA' && !t.stato.includes('ANNULLATA')) {
+// Se la richiesta non è rifiutata, NON è accettata e non è stata annullata, l'utente può annullarla
+        if (t.stato !== 'RIFIUTATA' && t.stato !== 'ACCETTATA' && !t.stato.includes('ANNULLATA')) {
             actionsHtml += `
                 <button class="btn btn-sm btn-warning rounded-pill shadow-sm text-dark" onclick="handleAnnullaP2P('${t.id}')" title="Annulla Transazione"><i class="fas fa-undo"></i></button>
             `;
@@ -538,7 +538,7 @@ confirmActionModal("Sei sicuro di voler annullare questa transazione? L'operazio
  * @param {string} idTrans - ID univoco della transazione
  */
 function handleAnnullaMinistero(idTrans) {
-confirmActionModal("Sei sicuro di voler annullare questa transazione?\nL'operazione restituirà i fondi e lo stato passerà ad ANNULLATA_MINISTERO.", () => {
+confirmActionModal("Sei sicuro di voler annullare questa transazione?\nL'operazione restituirà i fondi e lo stato passerà ad ANNULLATA MINISTERO.", () => {
         mostraLoading(true);
 
         google.script.run

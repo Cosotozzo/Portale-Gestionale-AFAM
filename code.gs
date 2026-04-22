@@ -1031,20 +1031,14 @@ function syncExportTable() {
  * Il JSON_Blob viene strutturato qui lato server garantendo il logging completo.
  */
 function submitBudgetRequest(token, payload) {
-var lock = LockService.getScriptLock();
   try {
     var userCtx = verifySessionAndGetUser(token);
     var idRichiedente = String(userCtx.istituzioneId);
     var idCedente = String(payload.cedenteId).trim();
 
-// Security: Impedisce a un'istituzione di cedere fondi a se stessa
+    // Security: Impedisce a un'istituzione di cedere fondi a se stessa
     if (idRichiedente === idCedente) {
         throw new Error("Non è possibile richiedere budget alla propria istituzione.");
-    }
-
-    // Pessimistic Locking: Timeout aumentato a 30s per scalare su 100+ occorrenze simultanee
-    if (!lock.tryLock(30000)) {
-      throw new Error("Il sistema è momentaneamente occupato a causa di un elevato numero di richieste. Riprovare tra qualche secondo.");
     }
 
     var importo = parseFloat(payload.importo);
@@ -1052,7 +1046,7 @@ var lock = LockService.getScriptLock();
         throw new Error("Importo non valido.");
     }
 
-if (payload.confermaDelibera !== true) {
+    if (payload.confermaDelibera !== true) {
         throw new Error("È obbligatorio confermare la delibera di variazione di organico.");
     }
 
@@ -1065,7 +1059,8 @@ if (payload.confermaDelibera !== true) {
         throw new Error("Errore DB: Impossibile trovare i fogli. Verifica che i fogli " + DB_CONFIG.SHEET_BUDGET_BASE + " e " + DB_CONFIG.SHEET_BUDGET_TRANS + " esistano nel Google Sheet.");
     }
 
-    // --- CALCOLO SALDO CEDENTE IN TEMPO REALE (Sotto Lock) ---
+    // --- FASE 1: LETTURE NON CRITICHE (Fuori dal Lock) ---
+    // Il Budget Iniziale (FOGLIO 1) è considerato immutabile e non necessita di protezione lock
     var baseData = sheetBase.getDataRange().getValues();
     var budgetInizialeCedente = 0;
     
@@ -1076,73 +1071,86 @@ if (payload.confermaDelibera !== true) {
         }
     }
 
-    var transData = sheetTrans.getLastRow() > 1 ? sheetTrans.getDataRange().getValues() : [];
-    var usciteCedente = 0;
-    var entrateCedente = 0;
-
-    for (var t = 1; t < transData.length; t++) {
-        var tReqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
-        var tCedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
-        var tStato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
-        
-        var tPayloadRaw = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
-        var tPayload = {};
-        try { tPayload = JSON.parse(tPayloadRaw); } catch(e){}
-        var tImporto = parseFloat(tPayload.importo_richiesto) || 0;
-
-        // Entrate: Il cedente ha a sua volta acquisito fondi da altri (stato ACCETTATA)
-        if (tReqId === idCedente && tStato === 'ACCETTATA') {
-            entrateCedente += tImporto;
-        }
-        
-        // Uscite: Il cedente sta cedendo o ha ceduto fondi
-        if (tCedId === idCedente && (tStato === 'ACCETTATA' || tStato === 'INVIATA' || tStato === 'IN_INTEGRAZIONE')) {
-            usciteCedente += tImporto;
-        }
+    // --- FASE 2: SEZIONE CRITICA (Sotto Lock) ---
+    var lock = LockService.getScriptLock();
+    // Pessimistic Locking: Timeout a 30s per scalare su 100+ occorrenze simultanee
+    if (!lock.tryLock(30000)) {
+      throw new Error("Il sistema è momentaneamente occupato a causa di un elevato numero di richieste. Riprovare tra qualche secondo.");
     }
 
-    var saldoDisponibileCedente = budgetInizialeCedente + entrateCedente - usciteCedente;
+    try {
+      // --- CALCOLO SALDO CEDENTE IN TEMPO REALE ---
+      // IMPORTANTE: I dati dinamici (FOGLIO 2) DEVONO essere letti qui, dopo aver acquisito il lock
+      var transData = sheetTrans.getLastRow() > 1 ? sheetTrans.getDataRange().getValues() : [];
+      var usciteCedente = 0;
+      var entrateCedente = 0;
 
-    // --- VERIFICA CAPIENZA ---
-    if (importo > saldoDisponibileCedente) {
-        throw new Error("Fondi insufficienti/già prenotati da altri enti.");
+      for (var t = 1; t < transData.length; t++) {
+          var tReqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+          var tCedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+          var tStato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+          
+          var tPayloadRaw = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
+          var tPayload = {};
+          try { tPayload = JSON.parse(tPayloadRaw); } catch(e){}
+          var tImporto = parseFloat(tPayload.importo_richiesto) || 0;
+
+          // Entrate: Il cedente ha a sua volta acquisito fondi da altri (stato ACCETTATA)
+          if (tReqId === idCedente && tStato === 'ACCETTATA') {
+              entrateCedente += tImporto;
+          }
+          
+          // Uscite: Il cedente sta cedendo o ha ceduto fondi
+          if (tCedId === idCedente && (tStato === 'ACCETTATA' || tStato === 'INVIATA' || tStato === 'IN_INTEGRAZIONE')) {
+              usciteCedente += tImporto;
+          }
+      }
+
+      var saldoDisponibileCedente = budgetInizialeCedente + entrateCedente - usciteCedente;
+
+      // --- VERIFICA CAPIENZA ---
+      if (importo > saldoDisponibileCedente) {
+          throw new Error("Fondi insufficienti/già prenotati da altri enti.");
+      }
+
+      // --- SALVATAGGIO TRANSAZIONE ---
+      var now = new Date().toISOString();
+      var dataBlob = {
+        importo_richiesto: importo,
+        conferma_delibera: payload.confermaDelibera,
+        history: [
+          {
+            timestamp: now,
+            attore: idRichiedente,
+            ruolo_attore: "RICHIEDENTE",
+            azione: "CREAZIONE_E_INVIO",
+            note: payload.note ? String(payload.note).trim() : ""
+          }
+        ]
+      };
+
+      var idTransazione = Utilities.getUuid();
+      var statoIniziale = "INVIATA"; 
+
+      sheetTrans.appendRow([
+        idTransazione,
+        idRichiedente,
+        idCedente,
+        statoIniziale,
+        JSON.stringify(dataBlob)
+      ]);
+
+      SpreadsheetApp.flush(); // Assicura che i dati siano scritti fisicamente prima di rilasciare il lock
+      return { success: true };
+
+    } finally {
+      // Rilascio garantito del Lock
+      lock.releaseLock();
     }
-
-    // --- SALVATAGGIO TRANSAZIONE ---
-    var now = new Date().toISOString();
-    
-var dataBlob = {
-      importo_richiesto: importo,
-      conferma_delibera: payload.confermaDelibera,
-      history: [
-        {
-          timestamp: now,
-          attore: idRichiedente,
-          ruolo_attore: "RICHIEDENTE",
-          azione: "CREAZIONE_E_INVIO",
-          note: payload.note ? String(payload.note).trim() : ""
-        }
-      ]
-    };
-    var idTransazione = Utilities.getUuid();
-    var statoIniziale = "INVIATA"; 
-
-    sheetTrans.appendRow([
-      idTransazione,
-      idRichiedente,
-      idCedente,
-      statoIniziale,
-      JSON.stringify(dataBlob)
-    ]);
-    
-    SpreadsheetApp.flush();
-    return { success: true };
 
   } catch (e) {
     Logger.log("Errore submitBudgetRequest: " + e.message);
     throw new Error(e.message);
-  } finally {
-    lock.releaseLock();
   }
 }
 
