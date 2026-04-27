@@ -163,6 +163,13 @@ const checkDelibera = document.getElementById('checkDelibera').checked;
         return;
     }
 
+// Validazione UX esplicita: previene l'inserimento manuale forzato della propria istituzione
+    const myInstitutionName = (currentUser && currentUser.istituzioneNome) ? currentUser.istituzioneNome.toLowerCase().trim() : "";
+    if (nomeSelezionato.toLowerCase().trim() === myInstitutionName) {
+        showToast("Non è possibile richiedere budget alla propria istituzione.", "warning");
+        return;
+    }
+
     // --- LOGICA MAPPING NOME -> ID ---
     const istFound = window.listaIstituzioniGlobal.find(i => i.nome === nomeSelezionato);
 

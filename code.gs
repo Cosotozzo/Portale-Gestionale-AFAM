@@ -130,6 +130,56 @@ function hashPassword(password, salt) {
 function generateUUID() { return Utilities.getUuid(); }
 
 /**
+ * Funzione globale di sanitizzazione contro Formula/CSV Injection (CWE-1236).
+ * Neutralizza i caratteri operativi forzando la cella a comportarsi come testo puro.
+ */
+function sanitizeForFormulaInjection(input) {
+  if (input === null || input === undefined) return "";
+  let str = String(input);
+  if (/^[=+\-@]/.test(str)) {
+    str = "'" + str; 
+  }
+  return str;
+}
+
+/**
+ * Sanitizzazione avanzata nella deserializzazione del JSON per i payload del Budget.
+ * Garantisce un'architettura rigorosa e previene Null Pointer o Type Errors.
+ * @param {string} rawStr - La stringa JSON estratta dal database.
+ * @returns {Object} - L'oggetto payload fortemente tipizzato e sanitizzato.
+ */
+function parseBudgetPayload(rawStr) {
+    const defaultPayload = {
+        importo_richiesto: 0,
+        conferma_delibera: false,
+        history: [],
+        note: ""
+    };
+    
+    try {
+        if (!rawStr) return defaultPayload;
+        
+        const obj = JSON.parse(rawStr);
+        
+        // Validazione strutturale esplicita: deve essere un oggetto e non un array
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+            return defaultPayload;
+        }
+        
+        // Type casting esplicito preventivo
+        return {
+            importo_richiesto: parseFloat(obj.importo_richiesto) || 0,
+            conferma_delibera: Boolean(obj.conferma_delibera),
+            history: Array.isArray(obj.history) ? obj.history : [],
+            note: obj.note ? String(obj.note).substring(0, 1000) : "" // Previene DoS
+        };
+    } catch (e) {
+        Logger.log("[SECURITY ALERT] Fallimento parsing JSON Budget. Payload corrotto: " + e.message);
+        return defaultPayload; // Fallback difensivo in caso di Parsing Error
+    }
+}
+
+/**
  * Verifica se il modulo Scambio Budget è attivo tramite ScriptProperties.
  * Approccio Zero Trust: se fallisce, nega l'accesso di default.
  */
@@ -273,14 +323,19 @@ function doLogin(formObject) {
 
     // 2. Acquisizione del Lock SOLO per la scrittura
     var lock = LockService.getScriptLock();
-    try {
-      lock.waitLock(15000); // Timeout ridotto a 15s perché l'operazione è istantanea
+try {
+      // Aumentato il timeout a 30s per supportare picchi > 100 accessi simultanei
+      lock.waitLock(30000); 
       
-      sheetCred.getRange(targetRowIndex, COL_MAP.CRED.SESSION_ID + 1).setValue(newSessionId);
+      // Batch I/O Ottimizzato: Le colonne SESSION_ID e LAST_LOGIN sono contigue.
+      // Uniamo le due scritture in un'unica chiamata setValues per dimezzare il tempo di locking
+      sheetCred.getRange(targetRowIndex, COL_MAP.CRED.SESSION_ID + 1, 1, 2)
+               .setValues([[newSessionId, new Date()]]);
+               
+      // La formattazione può essere applicata senza spezzare l'array
       sheetCred.getRange(targetRowIndex, COL_MAP.CRED.LAST_LOGIN + 1)
-               .setValue(new Date())
                .setNumberFormat("dd/MM/yyyy HH:mm:ss");
-      
+
       SpreadsheetApp.flush(); // Fondamentale prima del rilascio
     } finally {
       lock.releaseLock();
@@ -601,8 +656,11 @@ function saveCessazioni(token, payload) {
       const ss = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
       const sheetResp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
       
-      // Lookup O(1) con TextFinder per minimizzare il tempo di lock
-      const finder = sheetResp.getRange("B:B").createTextFinder(idIstituzione).matchEntireCell(true);
+// Ottimizzazione della geometria di ricerca
+      const lastRowIndex = Math.max(sheetResp.getLastRow(), 1);
+      // Confina la ricerca alle sole righe effettivamente popolate (Colonna 2 = B)
+      const searchRange = sheetResp.getRange(1, 2, lastRowIndex, 1);
+      const finder = searchRange.createTextFinder(idIstituzione).matchEntireCell(true);
       const result = finder.findNext();
       
       if (result) {
@@ -831,12 +889,28 @@ for (var i = 1; i < dataAnag.length; i++) {
     var privacyLog = formObject.privacyConsent ? "ACCETTATO - " + timestampConsenso : "NON ACCETTATO";
     var cookieLog = formObject.cookieConsent ? "ACCETTATO - " + timestampConsenso : "NON ACCETTATO";
 
+// Costruzione del payload con protezione Zero Trust (CWE-1236) su tutti i campi
+    const rowData = [
+        generateUUID(), 
+        userWhitelist.cf, 
+        userWhitelist.idIstituzione, 
+        userWhitelist.nome, 
+        userWhitelist.cognome, 
+        String(formObject.email).trim(), 
+        passwordHash, 
+        salt, 
+        userWhitelist.ruolo, 
+        pin, 
+        '', 
+        'IN_ATTESA_DI_APPROVAZIONE', 
+        new Date(), 
+        '', '', '', 
+        privacyLog, 
+        cookieLog
+    ].map(val => (typeof val === 'string') ? sanitizeForFormulaInjection(val) : val);
+
     // Salvataggio: Mappiamo Privacy su Colonna Q (17) e Cookie su Colonna R (18)
-    sheetCred.appendRow([
-        generateUUID(), userWhitelist.cf, userWhitelist.idIstituzione, userWhitelist.nome, userWhitelist.cognome, 
-        String(formObject.email).trim(), passwordHash, salt, userWhitelist.ruolo, pin, '', 
-        'IN_ATTESA_DI_APPROVAZIONE', new Date(), '', '', '', privacyLog, cookieLog
-    ]);
+    sheetCred.appendRow(rowData);
     return { success: true, message: "Registrazione inviata. Attendi approvazione." };
   } catch(e) { return { success: false, message: "Errore: " + e.message }; }
 }
@@ -1071,6 +1145,29 @@ function submitBudgetRequest(token, payload) {
         }
     }
 
+// --- CALCOLO SALDO CEDENTE (OTTIMISTICO, FUORI DAL LOCK) ---
+    var usciteCedente = 0;
+    var entrateCedente = 0;
+    var initialLastRow = sheetTrans.getLastRow();
+    
+    if (initialLastRow > 1) {
+        // Leggiamo tutto tranne l'intestazione
+        var transData = sheetTrans.getRange(2, 1, initialLastRow - 1, sheetTrans.getLastColumn()).getValues();
+        for (var t = 0; t < transData.length; t++) {
+            var tReqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+            var tCedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+            var tStato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+            
+            var tPayloadRaw = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
+            var tPayload = {};
+            try { tPayload = JSON.parse(tPayloadRaw); } catch(e){}
+            var tImporto = parseFloat(tPayload.importo_richiesto) || 0;
+
+            if (tReqId === idCedente && tStato === 'ACCETTATA') entrateCedente += tImporto;
+            if (tCedId === idCedente && (tStato === 'ACCETTATA' || tStato === 'INVIATA' || tStato === 'IN_INTEGRAZIONE')) usciteCedente += tImporto;
+        }
+    }
+
     // --- FASE 2: SEZIONE CRITICA (Sotto Lock) ---
     var lock = LockService.getScriptLock();
     // Pessimistic Locking: Timeout a 30s per scalare su 100+ occorrenze simultanee
@@ -1079,30 +1176,27 @@ function submitBudgetRequest(token, payload) {
     }
 
     try {
-      // --- CALCOLO SALDO CEDENTE IN TEMPO REALE ---
-      // IMPORTANTE: I dati dinamici (FOGLIO 2) DEVONO essere letti qui, dopo aver acquisito il lock
-      var transData = sheetTrans.getLastRow() > 1 ? sheetTrans.getDataRange().getValues() : [];
-      var usciteCedente = 0;
-      var entrateCedente = 0;
-
-      for (var t = 1; t < transData.length; t++) {
-          var tReqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
-          var tCedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
-          var tStato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+      // --- RICALCOLO SALDO CEDENTE (PESSIMISTICO, DELTA SOTTO LOCK) ---
+      SpreadsheetApp.flush(); // Assicura che la vista del database sia aggiornata
+      var currentLastRow = sheetTrans.getLastRow();
+      
+      // Controllo del differenziale per le transazioni intercorse
+      if (currentLastRow > initialLastRow) {
+          var deltaRows = currentLastRow - initialLastRow;
+          var deltaData = sheetTrans.getRange(initialLastRow + 1, 1, deltaRows, sheetTrans.getLastColumn()).getValues();
           
-          var tPayloadRaw = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
-          var tPayload = {};
-          try { tPayload = JSON.parse(tPayloadRaw); } catch(e){}
-          var tImporto = parseFloat(tPayload.importo_richiesto) || 0;
+          for (var d = 0; d < deltaData.length; d++) {
+              var dReqId = String(deltaData[d][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+              var dCedId = String(deltaData[d][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+              var dStato = deltaData[d][COL_MAP.BUDGET_TRANS.STATO];
+              
+              var dPayloadRaw = deltaData[d][COL_MAP.BUDGET_TRANS.JSON_BLOB];
+              var dPayload = {};
+              try { dPayload = JSON.parse(dPayloadRaw); } catch(e){}
+              var dImporto = parseFloat(dPayload.importo_richiesto) || 0;
 
-          // Entrate: Il cedente ha a sua volta acquisito fondi da altri (stato ACCETTATA)
-          if (tReqId === idCedente && tStato === 'ACCETTATA') {
-              entrateCedente += tImporto;
-          }
-          
-          // Uscite: Il cedente sta cedendo o ha ceduto fondi
-          if (tCedId === idCedente && (tStato === 'ACCETTATA' || tStato === 'INVIATA' || tStato === 'IN_INTEGRAZIONE')) {
-              usciteCedente += tImporto;
+              if (dReqId === idCedente && dStato === 'ACCETTATA') entrateCedente += dImporto;
+              if (dCedId === idCedente && (dStato === 'ACCETTATA' || dStato === 'INVIATA' || dStato === 'IN_INTEGRAZIONE')) usciteCedente += dImporto;
           }
       }
 
