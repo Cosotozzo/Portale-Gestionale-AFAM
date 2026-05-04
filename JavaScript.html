@@ -404,8 +404,20 @@ if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null
       const uName = document.getElementById('nav-user-name');
       if(uName) uName.innerText = "Utente";
       
-      const frm = document.getElementById('login-form');
-      if(frm) frm.reset(); 
+const frm = document.getElementById('login-form');
+      if(frm) {
+          frm.reset(); 
+          // Ripristino forzato stato password per garantire coerenza UI/UX e sicurezza
+          const passInput = document.getElementById('floatingPassword');
+          if(passInput && passInput.type === 'text') {
+              passInput.type = 'password';
+              const iconElement = document.querySelector('.toggle-password[data-target="floatingPassword"] i');
+              if(iconElement) {
+                  iconElement.classList.remove('fa-eye-slash');
+                  iconElement.classList.add('fa-eye');
+              }
+          }
+      }
       
       cessazioniData = []; 
       

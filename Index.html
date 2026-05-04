@@ -222,13 +222,14 @@
           <div class="col-12 col-md-6 col-lg-5">
             <div class="card login-card bg-white p-5">
                <h3 class="text-center mb-4 fw-bold" style="color: var(--header-main-bg);">Accedi al Servizio</h3>
-               <form id="login-form">
+<iframe name="hidden_iframe" id="hidden_iframe" style="display:none;"></iframe>
+               <form id="login-form" method="POST" target="hidden_iframe" action="javascript:void(0);">
                   <div class="form-floating mb-3">
-                    <input type="email" class="form-control" name="username" id="floatingInput" placeholder="name@example.com" required>
+                    <input type="email" class="form-control" name="username" id="floatingInput" placeholder="name@example.com" autocomplete="username" required>
                     <label for="floatingInput">Email Istituzionale</label>
                   </div>
-<div class="form-floating mb-4 position-relative">
-                    <input type="password" class="form-control pe-5" name="password" id="floatingPassword" placeholder="Password" required>
+                  <div class="form-floating mb-4 position-relative">
+                    <input type="password" class="form-control pe-5" name="password" id="floatingPassword" placeholder="Password" autocomplete="current-password" required>
                     <label for="floatingPassword">Password</label>
                     <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y px-3 shadow-none toggle-password" data-target="floatingPassword">
                         <i class="far fa-eye text-muted"></i>
@@ -289,8 +290,6 @@
                         </div>
                     </div>
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3"><input type="password" class="form-control" id="reg-pass" placeholder="Password" required></div>
 <div class="row mt-4">
                         <div class="col-md-6 mb-3 position-relative">
                             <input type="password" class="form-control pe-5" id="reg-pass" placeholder="Password" required>
@@ -305,7 +304,7 @@
                             </button>
                         </div>
                     </div>
-                    
+
                     <div class="mb-4 p-3 bg-light rounded-custom border">
                         <label class="form-label small fw-bold text-muted mb-2">REQUISITI PASSWORD</label>
                         <ul class="list-unstyled small mb-0" id="pwd-requirements-list">
