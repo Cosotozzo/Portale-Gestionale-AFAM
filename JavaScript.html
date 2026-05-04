@@ -27,10 +27,11 @@ const MODULES_CONFIG = {
   };
 
 // --- INIZIALIZZAZIONE (Gestione F5 e Refresh) ---
-  document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function() {
       checkStoredSession();
-// INIZIO MODIFICA
       setupPasswordValidation(); // Avvia i listener per la password
+// INIZIO MODIFICA
+      setupPasswordVisibilityToggle(); // Avvia i listener per mostrare/nascondere la password
 // FINE MODIFICA
   });
 
