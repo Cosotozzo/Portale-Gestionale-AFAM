@@ -1,77 +1,109 @@
 <div class="container-fluid py-4" id="scambio-budget-container">
 
-    <div id="istituzione-budget-container" class="d-none animate__animated animate__fadeIn">
+<div id="istituzione-budget-container" class="d-none animate__animated animate__fadeIn">
         
-<div class="row mb-4">
-            <div class="col-12 d-flex justify-content-between align-items-center mb-3">
-                <h3 class="fw-bold text-dark mb-0">Scambio Budget Organico</h3>
-                <button type="button" class="btn btn-primary rounded-pill px-4" onclick="openNuovaRichiestaModal()">
+        <div class="row mb-4">
+            <div class="col-12 d-flex justify-content-between align-items-center mb-1">
+                <div>
+                    <h3 class="fw-bold text-dark mb-1">Scambio Budget Organico</h3>
+                    <p class="text-muted mb-0">Gestisci e monitora le risorse economiche.</p>
+                </div>
+                <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm" onclick="openNuovaRichiestaModal()" style="background-color: #2962ff; border-color: #2962ff;">
                     <i class="fas fa-plus me-2"></i>Invia Nuova Richiesta
                 </button>
             </div>
+        </div>
+
+        <div class="row mb-4 g-3">
+            <div class="col-lg-8">
+                <div class="card border border-light shadow-sm rounded-custom p-4 h-100 position-relative bg-white">
+                    <div class="position-absolute opacity-10" style="top: 20px; right: 20px; font-size: 6rem; color: #ced4da;">
+                        <i class="fas fa-wallet"></i>
+                    </div>
+                    <div class="mb-4">
+                        <span class="text-uppercase text-muted fw-bold small"><i class="far fa-copy me-2"></i>BUDGET DISPONIBILE</span>
+                        <h1 class="display-5 fw-bold mt-2" id="stat-budget-disponibile" style="color: #2962ff !important; font-size: 3rem;">€ 0,00</h1>
+                    </div>
+                    
+                    <div class="row mt-auto pt-4 border-top">
+                        <div class="col-3">
+                            <div class="small text-muted fw-bold mb-1 text-uppercase">BUDGET INIZIALE</div>
+                            <div class="fw-bold fs-5 text-dark" id="stat-budget-iniziale">€ 0,00</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="small text-muted fw-bold mb-1 text-uppercase">BUDGET IN VALUTAZIONE</div>
+                            <div class="fw-bold fs-5" id="stat-budget-prenotato" style="color: #f2994a !important;">- € 0,00</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="small text-muted fw-bold mb-1 text-uppercase">BUDGET CEDUTO</div>
+                            <div class="fw-bold fs-5 text-danger" id="stat-budget-ceduto">- € 0,00</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="small text-muted fw-bold mb-1 text-uppercase">BUDGET ACQUISITO</div>
+                            <div class="fw-bold fs-5" id="stat-budget-acquisito" style="color: #00b050 !important;">+ € 0,00</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
             
-<div class="col-md-3">
-                <div class="card border-0 shadow-sm rounded-custom bg-primary text-white p-3 mb-3 d-flex flex-column justify-content-center h-100" style="min-height: 120px;">
-                    <div class="text-center mb-2">
-                        <small class="text-uppercase opacity-75 fw-bold mb-1 d-block">Budget Disponibile</small>
-                        <h4 class="mb-0 fw-bold" id="stat-budget-disponibile">€ 0,00</h4>
+            <div class="col-lg-4 d-flex flex-column gap-3">
+                <div class="card border border-warning border-opacity-25 shadow-sm rounded-custom p-3 flex-row align-items-center justify-content-between flex-grow-1" style="background-color: #fffdf5;">
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle bg-white shadow-sm d-flex justify-content-center align-items-center me-3 border" style="width: 45px; height: 45px;">
+                            <i class="far fa-clock text-warning fs-5"></i>
+                        </div>
+                        <span class="text-uppercase text-muted fw-bold small">RICHIESTE ATTIVE</span>
                     </div>
-                    <div class="small text-white-50 d-flex justify-content-between mt-2 pt-2 border-top border-light border-opacity-25">
-                        <span>Iniziale:</span> <span id="stat-budget-iniziale" class="text-white fw-bold">€ 0,00</span>
+                    <h2 class="mb-0 fw-bold text-dark" id="stat-richieste-attive">0</h2>
+                </div>
+                
+                <div class="card border border-success border-opacity-25 shadow-sm rounded-custom p-3 flex-row align-items-center justify-content-between flex-grow-1" style="background-color: #f0fdf4;">
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle bg-white shadow-sm d-flex justify-content-center align-items-center me-3 border" style="width: 45px; height: 45px;">
+                            <i class="far fa-check-circle text-success fs-5"></i>
+                        </div>
+                        <span class="text-uppercase text-muted fw-bold small">SCAMBI ACCETTATI</span>
                     </div>
-                    <div class="small text-white-50 d-flex justify-content-between">
-                        <span>Prenotate:</span> <span id="stat-budget-prenotato" class="text-warning fw-bold">- € 0,00</span>
+                    <h2 class="mb-0 fw-bold text-dark" id="stat-scambi-accettati">0</h2>
+                </div>
+
+                <div class="card border border-danger border-opacity-25 shadow-sm rounded-custom p-3 flex-row align-items-center justify-content-between flex-grow-1" style="background-color: #fff5f5;">
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle bg-white shadow-sm d-flex justify-content-center align-items-center me-3 border" style="width: 45px; height: 45px;">
+                            <i class="far fa-times-circle text-danger fs-5"></i>
+                        </div>
+                        <span class="text-uppercase text-muted fw-bold small">SCAMBI RIFIUTATI</span>
                     </div>
-                    <div class="small text-white-50 d-flex justify-content-between">
-                        <span>Cedute:</span> <span id="stat-budget-ceduto" class="text-danger fw-bold">- € 0,00</span>
-                    </div>
-                    <div class="small text-white-50 d-flex justify-content-between">
-                        <span>Acquisite:</span> <span id="stat-budget-acquisito" class="text-success fw-bold">+ € 0,00</span>
-                    </div>
+                    <h2 class="mb-0 fw-bold text-dark" id="stat-scambi-rifiutati">0</h2>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card border-0 shadow-sm rounded-custom p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center h-100" style="min-height: 120px;">
-                    <small class="text-uppercase text-muted fw-bold mb-2">Richieste Attive</small>
-                    <h2 class="mb-0 fw-bold text-warning" id="stat-richieste-attive">0</h2>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card border-0 shadow-sm rounded-custom p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center h-100" style="min-height: 120px;">
-                    <small class="text-uppercase text-muted fw-bold mb-2">Scambi Accettati</small>
-                    <h2 class="mb-0 fw-bold text-success" id="stat-scambi-accettati">0</h2>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card border-0 shadow-sm rounded-custom p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center h-100" style="min-height: 120px;">
-                    <small class="text-uppercase text-muted fw-bold mb-2">Scambi Rifiutati</small>
-                    <h2 class="mb-0 fw-bold text-danger" id="stat-scambi-rifiutati">0</h2>
-                </div>
-            </div>
-</div>
+        </div>
 
         <div class="card border-0 shadow-sm rounded-custom overflow-hidden">
-            <div class="card-header bg-white py-3 border-bottom">
-                <h5 class="mb-0 fw-bold"><i class="fas fa-list me-2 text-primary"></i>Riepilogo Movimentazioni</h5>
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold text-dark"><i class="fas fa-exchange-alt me-2 text-primary"></i>Lista dei Movimenti</h5>
+                <a href="#" class="text-decoration-none fw-bold small">Vedi Tutti</a>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0 text-center">
                     <thead class="table-light small text-muted text-uppercase">
                         <tr style="height: 50px;">
-                            <th class="align-middle">Data</th>
-                            <th class="align-middle">Denominazione Istituzione</th>
-                            <th class="align-middle">Tipo</th>
-                            <th class="align-middle">Importo</th>
-                            <th class="align-middle">Stato</th>
-                            <th class="align-middle">Azioni</th>
+                            <th class="align-middle">DATA</th>
+                            <th class="align-middle">DESCRIZIONE</th>
+                            <th class="align-middle">TIPO</th>
+                            <th class="align-middle">IMPORTO</th>
+                            <th class="align-middle">STATO</th>
+                            <th class="align-middle">AZIONI</th>
                         </tr>
                     </thead>
-<tbody id="tbodyIstituzioneBudget">
-                        </tbody>
+                    <tbody id="tbodyIstituzioneBudget">
+                    </tbody>
                 </table>
             </div>
         </div>
-    </div> <div id="ministero-budget-container" class="d-none animate__animated animate__fadeIn">
+    </div>
+
+    <div id="ministero-budget-container" class="d-none animate__animated animate__fadeIn">
         
         <div class="row mb-4">
             <div class="col-12">
