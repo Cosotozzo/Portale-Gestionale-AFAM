@@ -1400,6 +1400,8 @@ return {
             stats: { 
                 saldoIniziale: myBudgetBase, 
                 entrateAccettate: entrate, 
+                uscitePendenza: uscitePendenza,
+                usciteAccettate: usciteAccettate,
                 uscitePendenti: (usciteAccettate + uscitePendenza), 
                 saldoDisponibile: (myBudgetBase + entrate - usciteAccettate - uscitePendenza),
                 richiesteAttive: countRichiesteAttive,

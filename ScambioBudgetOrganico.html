@@ -11,30 +11,44 @@
             </div>
             
 <div class="col-md-3">
-                <div class="card border-0 shadow-sm rounded-custom bg-primary text-white p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center" style="min-height: 120px;">
-                    <small class="text-uppercase opacity-75 fw-bold mb-2">Budget Disponibile</small>
-                    <h2 class="mb-0 fw-bold" id="stat-budget-disponibile">€ 0,00</h2>
+                <div class="card border-0 shadow-sm rounded-custom bg-primary text-white p-3 mb-3 d-flex flex-column justify-content-center h-100" style="min-height: 120px;">
+                    <div class="text-center mb-2">
+                        <small class="text-uppercase opacity-75 fw-bold mb-1 d-block">Budget Disponibile</small>
+                        <h4 class="mb-0 fw-bold" id="stat-budget-disponibile">€ 0,00</h4>
+                    </div>
+                    <div class="small text-white-50 d-flex justify-content-between mt-2 pt-2 border-top border-light border-opacity-25">
+                        <span>Iniziale:</span> <span id="stat-budget-iniziale" class="text-white fw-bold">€ 0,00</span>
+                    </div>
+                    <div class="small text-white-50 d-flex justify-content-between">
+                        <span>Prenotate:</span> <span id="stat-budget-prenotato" class="text-warning fw-bold">- € 0,00</span>
+                    </div>
+                    <div class="small text-white-50 d-flex justify-content-between">
+                        <span>Cedute:</span> <span id="stat-budget-ceduto" class="text-danger fw-bold">- € 0,00</span>
+                    </div>
+                    <div class="small text-white-50 d-flex justify-content-between">
+                        <span>Acquisite:</span> <span id="stat-budget-acquisito" class="text-success fw-bold">+ € 0,00</span>
+                    </div>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="card border-0 shadow-sm rounded-custom p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center" style="min-height: 120px;">
+                <div class="card border-0 shadow-sm rounded-custom p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center h-100" style="min-height: 120px;">
                     <small class="text-uppercase text-muted fw-bold mb-2">Richieste Attive</small>
                     <h2 class="mb-0 fw-bold text-warning" id="stat-richieste-attive">0</h2>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="card border-0 shadow-sm rounded-custom p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center" style="min-height: 120px;">
+                <div class="card border-0 shadow-sm rounded-custom p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center h-100" style="min-height: 120px;">
                     <small class="text-uppercase text-muted fw-bold mb-2">Scambi Accettati</small>
                     <h2 class="mb-0 fw-bold text-success" id="stat-scambi-accettati">0</h2>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="card border-0 shadow-sm rounded-custom p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center" style="min-height: 120px;">
+                <div class="card border-0 shadow-sm rounded-custom p-3 mb-3 d-flex flex-column justify-content-center align-items-center text-center h-100" style="min-height: 120px;">
                     <small class="text-uppercase text-muted fw-bold mb-2">Scambi Rifiutati</small>
                     <h2 class="mb-0 fw-bold text-danger" id="stat-scambi-rifiutati">0</h2>
                 </div>
             </div>
-        </div>
+</div>
 
         <div class="card border-0 shadow-sm rounded-custom overflow-hidden">
             <div class="card-header bg-white py-3 border-bottom">

@@ -289,8 +289,20 @@ function handleMasterSwitchChange(el) {
  */
 function renderUserView(stats, transazioni) {
     // Update Stats Box
-    const bdgDisponibileEl = document.getElementById('stat-budget-disponibile');
+const bdgDisponibileEl = document.getElementById('stat-budget-disponibile');
     if(bdgDisponibileEl) bdgDisponibileEl.innerText = '€ ' + formatMoney(stats.saldoDisponibile);
+    
+    const bdgInizialeEl = document.getElementById('stat-budget-iniziale');
+    if(bdgInizialeEl) bdgInizialeEl.innerText = '€ ' + formatMoney(stats.saldoIniziale);
+    
+    const bdgPrenotatoEl = document.getElementById('stat-budget-prenotato');
+    if(bdgPrenotatoEl) bdgPrenotatoEl.innerText = '- € ' + formatMoney(stats.uscitePendenza);
+
+    const bdgCedutoEl = document.getElementById('stat-budget-ceduto');
+    if(bdgCedutoEl) bdgCedutoEl.innerText = '- € ' + formatMoney(stats.usciteAccettate);
+
+    const bdgAcquisitoEl = document.getElementById('stat-budget-acquisito');
+    if(bdgAcquisitoEl) bdgAcquisitoEl.innerText = '+ € ' + formatMoney(stats.entrateAccettate);
     
     const reqAttiveEl = document.getElementById('stat-richieste-attive');
     if(reqAttiveEl) reqAttiveEl.innerText = stats.richiesteAttive || '0';
@@ -318,8 +330,8 @@ function renderUserView(stats, transazioni) {
             hasActions = true;
         }
 
-// Se la richiesta non è rifiutata, NON è accettata e non è stata annullata, l'utente può annullarla
-        if (t.stato !== 'RIFIUTATA' && t.stato !== 'ACCETTATA' && !t.stato.includes('ANNULLATA')) {
+// Il pulsante annulla transazione è visibile SOLO all'istituzione che ha creato/inviato la richiesta (t.tipo === 'INVIATA')
+        if (t.tipo === 'INVIATA' && t.stato !== 'RIFIUTATA' && t.stato !== 'ACCETTATA' && !t.stato.includes('ANNULLATA')) {
             actionsHtml += `
                 <button class="btn btn-sm btn-warning rounded-pill shadow-sm text-dark" onclick="handleAnnullaP2P('${t.id}')" title="Annulla Transazione"><i class="fas fa-undo"></i></button>
             `;
