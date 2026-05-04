@@ -1,7 +1,7 @@
 <script>
   /**
    * PORTALE GESTIONALE AFAM
-   * Versione: 16.0 (Session Persistence + Inactivity Timeout)if 
+   * Versione: 16.0 (Session Persistence + Inactivity Timeout) 
    */
 
   // --- VARIABILI GLOBALI ---
@@ -510,6 +510,32 @@ function setupPasswordValidation() {
       }
   }
 // FINE MODIFICA
+
+function setupPasswordVisibilityToggle() {
+      const toggleButtons = document.querySelectorAll('.toggle-password');
+      toggleButtons.forEach(button => {
+          button.addEventListener('click', function(e) {
+              e.preventDefault(); // Previene eventuali submit indesiderati
+              const targetId = this.getAttribute('data-target');
+              if (!targetId) return;
+              
+              const inputElement = document.getElementById(targetId);
+              const iconElement = this.querySelector('i');
+              
+              if (inputElement && iconElement) {
+                  if (inputElement.type === 'password') {
+                      inputElement.type = 'text';
+                      iconElement.classList.remove('fa-eye');
+                      iconElement.classList.add('fa-eye-slash');
+                  } else {
+                      inputElement.type = 'password';
+                      iconElement.classList.remove('fa-eye-slash');
+                      iconElement.classList.add('fa-eye');
+                  }
+              }
+          });
+      });
+  }
 
   // --- REGISTRAZIONE & RESET ---
   function loadInstitutions() {
