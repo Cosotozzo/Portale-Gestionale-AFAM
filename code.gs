@@ -974,9 +974,17 @@ function resetPasswordByData(formObj) {
     }
     // --- FINE MODIFICA ---
 
-    // 3. Verifica esito e reset password
+// 3. Verifica esito e reset password
     if (userRowIndex === -1) {
-        return { success: false, message: "Dati utente non trovati." };
+        return { success: false, message: "Dati utente non trovati."
+        };
+    }
+    
+    // Validazione robusta lato server sulla complessità della password (Zero Trust)
+    var passwordInput = String(formObj.newPassword || "");
+    const REGEX_STRONG_SERVER = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!REGEX_STRONG_SERVER.test(passwordInput)) {
+        return { success: false, message: "La nuova password non soddisfa i requisiti di complessità e sicurezza." };
     }
     
     var newSalt = generateUUID();

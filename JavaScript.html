@@ -492,7 +492,7 @@ function setupPasswordValidation() {
           return checkLen && checkSpec && checkNum && checkMatch && isStrong;
       };
 
-      if(p1 && p2) {
+if(p1 && p2) {
           // Usa 'keyup' per feedback immediato durante la digitazione
           p1.addEventListener('keyup', window.isPasswordValid);
           p2.addEventListener('keyup', window.isPasswordValid);
@@ -522,28 +522,29 @@ function updateRequirementUI(id, isValid) {
   }
 
 function setupPasswordVisibilityToggle() {
-====
-  function updateRequirementUI(id, isValid) {
-      const el = document.getElementById(id);
-      if(!el) return;
-      const icon = el.querySelector('i');
-      
-      if (isValid) {
-          el.classList.remove('text-muted');
-          el.classList.add('text-success', 'fw-bold');
-          if(icon) {
-             icon.classList.remove('far', 'fa-circle');
-             icon.classList.add('fas', 'fa-check-circle');
-          }
-      } else {
-          el.classList.remove('text-success', 'fw-bold');
-          el.classList.add('text-muted');
-          if(icon) {
-             icon.classList.remove('fas', 'fa-check-circle');
-             icon.classList.add('far', 'fa-circle');
-          }
-      }
-  }
+    document.querySelectorAll('.toggle-password').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const targetEl = document.getElementById(targetId);
+            if (!targetEl) return;
+            
+            const icon = this.querySelector('i');
+            if (targetEl.type === 'password') {
+                targetEl.type = 'text';
+                if (icon) {
+                    icon.classList.remove('fa-eye');
+                    icon.classList.add('fa-eye-slash');
+                }
+            } else {
+                targetEl.type = 'password';
+                if (icon) {
+                    icon.classList.remove('fa-eye-slash');
+                    icon.classList.add('fa-eye');
+                }
+            }
+        });
+    });
+}
 
 function setupResetPasswordValidation() {
       const p1 = document.getElementById('reset-new-pass');
