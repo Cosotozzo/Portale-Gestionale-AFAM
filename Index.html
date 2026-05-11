@@ -367,6 +367,35 @@
                     <button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button>
                     <button type="button" class="btn-login w-50" onclick="submitReset()">Salva</button>
                 </div>
+                <div class="row mb-3">
+                    <div class="col-md-6 mb-3 mb-md-0 position-relative">
+                        <input type="password" class="form-control pe-5" id="reset-new-pass" placeholder="Nuova Password" required>
+                        <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y px-3 shadow-none toggle-password" data-target="reset-new-pass">
+                            <i class="far fa-eye text-muted"></i>
+                        </button>
+                    </div>
+                    <div class="col-md-6 position-relative">
+                        <input type="password" class="form-control pe-5" id="reset-new-pass-conf" placeholder="Conferma Password" required>
+                        <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y px-3 shadow-none toggle-password" data-target="reset-new-pass-conf">
+                            <i class="far fa-eye text-muted"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-4 p-3 bg-light rounded-custom border text-start">
+                    <label class="form-label small fw-bold text-muted mb-2">REQUISITI PASSWORD</label>
+                    <ul class="list-unstyled small mb-0" id="reset-pwd-requirements-list">
+                        <li id="reset-req-len" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 8 caratteri</li>
+                        <li id="reset-req-spec" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 1 carattere speciale (!@#$%^&*)</li>
+                        <li id="reset-req-num" class="text-muted"><i class="far fa-circle me-2"></i>Almeno 1 numero</li>
+                        <li id="reset-req-match" class="text-muted"><i class="far fa-circle me-2"></i>Le password coincidono</li>
+                    </ul>
+                </div>
+                
+                <div class="d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button>
+                    <button type="button" class="btn-login w-50" onclick="submitReset()">Salva</button>
+                </div>
               </form>
             </div>
           </div>

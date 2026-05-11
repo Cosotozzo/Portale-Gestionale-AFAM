@@ -29,10 +29,9 @@ const MODULES_CONFIG = {
 // --- INIZIALIZZAZIONE (Gestione F5 e Refresh) ---
 document.addEventListener('DOMContentLoaded', function() {
       checkStoredSession();
-      setupPasswordValidation(); // Avvia i listener per la password
-// INIZIO MODIFICA
+      setupPasswordValidation(); // Avvia i listener per la password di registrazione
+      setupResetPasswordValidation(); // Avvia i listener per la password di reset
       setupPasswordVisibilityToggle(); // Avvia i listener per mostrare/nascondere la password
-// FINE MODIFICA
   });
 
 function checkStoredSession() {
@@ -500,6 +499,30 @@ function setupPasswordValidation() {
       }
   }
 
+function updateRequirementUI(id, isValid) {
+      const el = document.getElementById(id);
+      if(!el) return;
+      const icon = el.querySelector('i');
+      
+      if (isValid) {
+          el.classList.remove('text-muted');
+          el.classList.add('text-success', 'fw-bold');
+          if(icon) {
+             icon.classList.remove('far', 'fa-circle');
+             icon.classList.add('fas', 'fa-check-circle');
+          }
+      } else {
+          el.classList.remove('text-success', 'fw-bold');
+          el.classList.add('text-muted');
+          if(icon) {
+             icon.classList.remove('fas', 'fa-check-circle');
+             icon.classList.add('far', 'fa-circle');
+          }
+      }
+  }
+
+function setupPasswordVisibilityToggle() {
+====
   function updateRequirementUI(id, isValid) {
       const el = document.getElementById(id);
       if(!el) return;
@@ -521,32 +544,39 @@ function setupPasswordValidation() {
           }
       }
   }
-// FINE MODIFICA
 
-function setupPasswordVisibilityToggle() {
-      const toggleButtons = document.querySelectorAll('.toggle-password');
-      toggleButtons.forEach(button => {
-          button.addEventListener('click', function(e) {
-              e.preventDefault(); // Previene eventuali submit indesiderati
-              const targetId = this.getAttribute('data-target');
-              if (!targetId) return;
-              
-              const inputElement = document.getElementById(targetId);
-              const iconElement = this.querySelector('i');
-              
-              if (inputElement && iconElement) {
-                  if (inputElement.type === 'password') {
-                      inputElement.type = 'text';
-                      iconElement.classList.remove('fa-eye');
-                      iconElement.classList.add('fa-eye-slash');
-                  } else {
-                      inputElement.type = 'password';
-                      iconElement.classList.remove('fa-eye-slash');
-                      iconElement.classList.add('fa-eye');
-                  }
-              }
-          });
-      });
+function setupResetPasswordValidation() {
+      const p1 = document.getElementById('reset-new-pass');
+      const p2 = document.getElementById('reset-new-pass-conf');
+      
+      // Regex Coerente con la registrazione: 8+ caratteri, 1 Maiuscola, 1 Numero, 1 Speciale
+      const REGEX_STRONG = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
+      window.isResetPasswordValid = () => {
+          if(!p1 || !p2) return false;
+          const v1 = p1.value || "";
+          const v2 = p2.value || "";
+
+          // Check atomici per UI
+          const checkLen = v1.length >= 8;
+          const checkSpec = /[!@#$%^&*(),.?":{}|<>]/.test(v1); 
+          const checkNum = /\d/.test(v1); 
+          const checkMatch = (v1 === v2) && v1.length > 0;
+          
+          const isStrong = REGEX_STRONG.test(v1);
+
+          updateRequirementUI('reset-req-len', checkLen);
+          updateRequirementUI('reset-req-spec', checkSpec);
+          updateRequirementUI('reset-req-num', checkNum);
+          updateRequirementUI('reset-req-match', checkMatch);
+
+          return checkLen && checkSpec && checkNum && checkMatch && isStrong;
+      };
+
+      if(p1 && p2) {
+          p1.addEventListener('keyup', window.isResetPasswordValid);
+          p2.addEventListener('keyup', window.isResetPasswordValid);
+      }
   }
 
   // --- REGISTRAZIONE & RESET ---
@@ -655,9 +685,15 @@ function submitRegistration() {
         .registerUser(payload);
   }
 
-  function submitReset() {
+function submitReset() {
       const inst = document.getElementById('reset-institution').value;
       if (!inst) return showToast("Compilare i campi", 'error');
+
+      // Validazione requisiti password lato client (Zero Trust Client-side)
+      if (typeof window.isResetPasswordValid === 'function' && !window.isResetPasswordValid()) {
+          return showToast("La password non soddisfa i requisiti di sicurezza richiesti.", 'warning');
+      }
+
       toggleLoading(true);
       google.script.run.withSuccessHandler(res => { toggleLoading(false); if(res.success){ showToast("Ripristino Password avvenuto con successo", 'success'); showView('view-login'); } else showToast(res.message, 'error'); }).resetPasswordByData({ institutionName: inst, cf: document.getElementById('reset-cf').value, username: document.getElementById('reset-email').value, pin: document.getElementById('reset-pin').value, newPassword: document.getElementById('reset-new-pass').value });
   }

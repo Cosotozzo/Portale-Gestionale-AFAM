@@ -882,6 +882,13 @@ for (var i = 1; i < dataAnag.length; i++) {
         }
     }
     
+// Validazione robusta lato server sulla complessità della password (Zero Trust)
+    var passwordInput = String(formObject.password || "");
+    const REGEX_STRONG_SERVER = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!REGEX_STRONG_SERVER.test(passwordInput)) {
+        return { success: false, message: "La password non soddisfa i requisiti di complessità e sicurezza." };
+    }
+
     var salt = generateUUID();
     var passwordHash = hashPassword(formObject.password, salt);
 // Formattiamo la data del momento esatto per il tracciato DB
@@ -1022,80 +1029,73 @@ function logoutUser(token) {
 }
 
 /**
- * TRIGGER NOTTURNO (Sincronizzazione Export)
- * Da impostare tra le 23:00 e le 00:00.
- * Rigenera completamente il foglio EXPORT_DATI_CESSAZIONI basandosi sui dati JSON.
+ * TRIGGER NOTTURNO CESSAZIONI reso strettamente privato.
+ * L'aggiunta dell'underscore finale impedisce fisicamente a google.script.run 
+ * di risolvere e mappare l'endpoint, bloccando l'esecuzione anonima.
  */
-function syncExportTable() {
-  var lock = LockService.getScriptLock();
+function syncExportTable_() {
+  const lock = LockService.getScriptLock();
   try { 
-    lock.waitLock(5000);
-  } catch(e) { return; } 
+    // Timeout ridotto drasticamente a 5 secondi per i job in background.
+    // Previene stalli irreversibili della coda di esecuzione in caso di conflitti.
+    if (!lock.tryLock(5000)) {
+      Logger.log(" Tentativo di sync interrotto: Lock di sistema occupato.");
+      return; 
+    }
+  } catch(e) { 
+    return; 
+  } 
   
   try {
-    var ss = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
-    var sheetResp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
-    var sheetExp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_EXP);
+    const ss = SpreadsheetApp.openById(DB_CONFIG.ID_CESSAZIONI);
+    const sheetResp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_RESP);
+    const sheetExp = ss.getSheetByName(DB_CONFIG.SHEET_CESSAZIONI_EXP);
     
-    if(!sheetResp || !sheetExp) {
-      Logger.log("Fogli non trovati per syncExportTable");
-      return;
-    }
+    // Difesa in profondità: intercettazione rapida di corruzione del database
+    if(!sheetResp || !sheetExp) throw new Error("Fogli target irraggiungibili o rinominati.");
 
-    // 1. Lettura massiva delle risposte
-    var dataResp = sheetResp.getDataRange().getValues();
-    var exportRows = [];
-    var dataExport = new Date();
+    const dataResp = sheetResp.getDataRange().getValues();
+    const exportRows = [];
+    const dataExport = new Date();
 
-    // Elaborazione dati (Parsing JSON)
-    for (var i = 1; i < dataResp.length; i++) {
-      var idIst = dataResp[i][1]; // Colonna B
-      var stato = dataResp[i][2]; // Colonna C
-      var rawJson = dataResp[i][5]; // Colonna F
+    // Loop iper-ottimizzato: caching della lunghezza dell'array e destrutturazione O(N)
+    for (let i = 1, len = dataResp.length; i < len; i++) {
+      // Estrazione mirata saltando le colonne non necessarie per limitare l'allocazione in memoria
+      const [ , idIst, stato, , , rawJson ] = dataResp[i];
       
-      // Filtro: Estrae SOLO i moduli in stato INVIATO
+      // Filtro per stato coerente prima di tentare il costoso parsing JSON
       if (stato === 'INVIATO' && rawJson) {
         try {
-          var parsed = JSON.parse(rawJson);
-          var rows = Array.isArray(parsed) ? parsed : (parsed.rows || []);
-          var flagNuova = (parsed.flag === true) ? "SI" : "NO";
-
-          rows.forEach(function(r) {
-            exportRows.push([
-              idIst,           
-              r.cf,            
-              r.azione,        
-              r.note || "",    
-              dataExport,      // Timestamp univoco di questa sincronizzazione
-              flagNuova        
-            ]);
-          });
+          const parsed = JSON.parse(rawJson);
+          const rows = Array.isArray(parsed) ? parsed : (parsed.rows || []);
+          const flagNuova = (parsed.flag === true) ? "SI" : "NO";
+          
+          for(const r of rows) {
+            exportRows.push([idIst, r.cf, r.azione, r.note || "", dataExport, flagNuova]);
+          }
         } catch(e) {
-          Logger.log("Errore parsing JSON alla riga " + (i+1) + ": " + e.message);
+          Logger.log(` Parsing JSON fallito alla riga ${i+1}. Ignorata.`);
         }
       }
     }
     
-    // 2. Pulizia tabella Export (Drop dei dati vecchi, preservando la riga di intestazione)
-    var lastRowExp = Math.max(sheetExp.getLastRow(), 1);
-    if (lastRowExp > 1) {
-      // Pulisce rigorosamente tutte le righe sotto l'intestazione
-      sheetExp.getRange(2, 1, lastRowExp - 1, sheetExp.getLastColumn()).clearContent();
-    }
-
-    // 3. Scrittura Massiva (Full Refresh) in una singola transazione O(1)
     if (exportRows.length > 0) {
+      const lastRowExp = Math.max(sheetExp.getLastRow(), 1);
+      if (lastRowExp > 1) {
+        // Pulizia transazionale del range precedente
+        sheetExp.getRange(2, 1, lastRowExp - 1, sheetExp.getLastColumn()).clearContent();
+      }
+      // Scrittura batch O(1) in una singola transazione API REST
       sheetExp.getRange(2, 1, exportRows.length, exportRows[0].length).setValues(exportRows);
-      Logger.log("Export Full Refresh completato: " + exportRows.length + " righe scritte coerentemente.");
+      SpreadsheetApp.flush(); // Forza la persistenza fisica del dato
+      Logger.log(`[JOB CESSAZIONI] Success: Esportate ${exportRows.length} righe.`);
     } else {
-      Logger.log("Export Full Refresh: Nessun dato valido trovato per l'export.");
+      Logger.log("[JOB CESSAZIONI] Nessun dato trovato da esportare.");
     }
-
-    // Eliminata la logica fallace del Watermark (PropertiesService)
-
   } catch(e) {
-    Logger.log("Errore Critico SyncExport: " + e.toString());
-} finally {
+    Logger.log(" Fallimento durante syncExportTable_: " + e.message);
+  } finally {
+    // Rilascio garantito del mutex
     lock.releaseLock();
   }
 }
@@ -1701,32 +1701,38 @@ const searchRange = sheet.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheet.g
     
   } catch(e) {
     Logger.log("[ERROR] updateBudgetRequestStatus: " + e.message);
-    return { success: false, message: e.message };
+return { success: false, message: e.message };
   } finally {
     lock.releaseLock();
   }
 }
 
 /**
- * Job Notturno: Sincronizzazione Export Budget (BUDGET_TRANS -> BUDGET_EXP).
- * Ottimizzato con Early Exit (Timestamp) e inserimento incrementale.
+ * TRIGGER NOTTURNO reso strettamente privato.
+ * Sincronizzazione Export Budget (BUDGET_TRANS -> BUDGET_EXP).
+ * L'aggiunta dell'underscore finale impedisce fisicamente a google.script.run 
+ * di risolvere e mappare l'endpoint, bloccando l'esecuzione anonima.
  */
-function syncBudgetExportTable() {
+function syncBudgetExportTable_() {
   const lock = LockService.getScriptLock();
   try {
-    // Zero Trust: Timeout 30s per concorrenza
-    if (!lock.tryLock(30000)) {
-      Logger.log("[JOB BUDGET] Impossibile acquisire il lock. Job saltato.");
+    // Timeout ridotto drasticamente a 5 secondi per i job in background.
+    // Previene stalli irreversibili della coda di esecuzione in caso di conflitti.
+    if (!lock.tryLock(5000)) {
+      Logger.log(" Tentativo di sync interrotto: Lock di sistema occupato.");
       return;
     }
+  } catch(e) {
+    return;
+  }
 
+  try {
     const fileBudget = DriveApp.getFileById(DB_CONFIG.ID_BUDGETORGANICO);
     const lastModifiedTime = fileBudget.getLastUpdated().getTime();
     
     const scriptProperties = PropertiesService.getScriptProperties();
     const lastSyncTime = parseInt(scriptProperties.getProperty('BUDGET_LAST_SYNC_TIME')) || 0;
 
-    // Early Exit: fermiamo il job se il file non è stato toccato
     if (lastModifiedTime <= lastSyncTime) {
       Logger.log("[JOB BUDGET] Nessuna modifica rilevata al DB Budget dall'ultima esecuzione. Early Exit.");
       return;
@@ -1737,74 +1743,69 @@ function syncBudgetExportTable() {
     const sheetTrans = ssBudget.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
     const sheetExp = ssBudget.getSheetByName(DB_CONFIG.SHEET_BUDGET_EXP);
 
+    // Difesa in profondità: intercettazione rapida di corruzione del database
+    if(!sheetBase || !sheetTrans || !sheetExp) throw new Error("Fogli target irraggiungibili o rinominati.");
+
     // 1. Caricamento Anagrafica e Saldi
     const baseData = sheetBase.getDataRange().getValues();
     const mapBalances = {};
     const mapNames = {};
-    for (let b = 1; b < baseData.length; b++) {
+    for (let b = 1, len = baseData.length; b < len; b++) {
       const id = String(baseData[b][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]);
       mapBalances[id] = parseFloat(baseData[b][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
       mapNames[id] = baseData[b][COL_MAP.BUDGET_BASE.DENOMINAZIONE];
     }
 
-    // 2. Recupero ID_TRANS già esportati
-    const lastRowExp = sheetExp.getLastRow();
+    // 2. Recupero ID_TRANS già esportati (Set Lookup O(1))
+    const lastRowExp = Math.max(sheetExp.getLastRow(), 1);
     const exportedIds = new Set();
     if (lastRowExp > 1) {
-      // Assumendo che ID_TRANS sia alla colonna J (Indice 9, quindi colonna 10 del foglio)
       const existingIds = sheetExp.getRange(2, COL_MAP.BUDGET_EXP.ID_TRANS + 1, lastRowExp - 1, 1).getValues();
       existingIds.forEach(row => exportedIds.add(String(row[0])));
     }
 
-// 3. Elaborazione sequenziale transazioni
+    // 3. Elaborazione sequenziale transazioni
     const transData = sheetTrans.getDataRange().getValues();
     const rowsToExport = [];
 
-    for (let t = 1; t < transData.length; t++) {
-      const idTrans = String(transData[t][COL_MAP.BUDGET_TRANS.ID_TRANS]);
-      const reqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]);
-      const cedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]);
-      const stato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+    // Loop iper-ottimizzato: caching della lunghezza dell'array e destrutturazione posizionale
+    for (let t = 1, len = transData.length; t < len; t++) {
+      // Estrazione mirata che salta l'allocazione selettiva non necessaria
+      const [ idTransRaw, reqIdRaw, cedIdRaw, stato, rawJsonBlob ] = transData[t];
       
-      // FILTRO: Solo scambi confermati
-      if (stato !== 'ACCETTATA') continue;
+      // Filtro per stato coerente ED esistenza set prima del parsing JSON costoso
+      if (stato === 'ACCETTATA' && !exportedIds.has(String(idTransRaw))) {
+        try {
+          const idTrans = String(idTransRaw);
+          const reqId = String(reqIdRaw);
+          const cedId = String(cedIdRaw);
 
-      const payload = JSON.parse(transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB] || "{}");
-      const importo = parseFloat(payload.importo_richiesto) || 0;
+          const payload = JSON.parse(rawJsonBlob || "{}");
+          const importo = parseFloat(payload.importo_richiesto) || 0;
 
-      // Cattura residui Ante (Stato prima di questa transazione)
-      const anteCed = mapBalances[cedId] || 0;
-      const anteReq = mapBalances[reqId] || 0;
+          // Cattura residui Ante
+          const anteCed = mapBalances[cedId] || 0;
+          const anteReq = mapBalances[reqId] || 0;
 
-      // AGGIORNAMENTO SALDI: Applichiamo l'effetto dello scambio al registro temporaneo
-      mapBalances[cedId] -= importo;
-      mapBalances[reqId] += importo;
+          // Aggiornamento Saldi Registro Temporaneo
+          mapBalances[cedId] -= importo;
+          mapBalances[reqId] += importo;
 
-      // Cattura residui Post (Stato dopo questa transazione)
-      const postCed = mapBalances[cedId] || 0;
-      const postReq = mapBalances[reqId] || 0;
-
-      // IDEMPOTENZA: Aggiungiamo alla lista di scrittura solo se non è già nell'export
-      if (!exportedIds.has(idTrans)) {
-        rowsToExport.push([
-          cedId, 
-          mapNames[cedId] || cedId, 
-          anteCed, 
-          postCed,
-          reqId, 
-          mapNames[reqId] || reqId, 
-          anteReq, 
-          postReq,
-          importo,
-          idTrans 
-        ]);
+          rowsToExport.push([
+            cedId, mapNames[cedId] || cedId, anteCed, mapBalances[cedId],
+            reqId, mapNames[reqId] || reqId, anteReq, mapBalances[reqId],
+            importo, idTrans 
+          ]);
+        } catch(e) {
+          Logger.log(`[ERRORE] Parsing JSON fallito alla riga transazione ${t+1}. Ignorata.`);
+        }
       }
     }
 
-    // 4. Scrittura Massiva Finale
+    // 4. Scrittura Batch O(1) in una singola transazione API REST
     if (rowsToExport.length > 0) {
       sheetExp.getRange(lastRowExp + 1, 1, rowsToExport.length, rowsToExport[0].length).setValues(rowsToExport);
-      SpreadsheetApp.flush();
+      SpreadsheetApp.flush(); // Forza la persistenza fisica del dato
       Logger.log(`[JOB BUDGET] Success: Esportate ${rowsToExport.length} nuove occorrenze.`);
     } else {
       Logger.log("[JOB BUDGET] Nessuna nuova occorrenza trovata da esportare.");
@@ -1814,8 +1815,9 @@ function syncBudgetExportTable() {
     scriptProperties.setProperty('BUDGET_LAST_SYNC_TIME', new Date().getTime().toString());
 
   } catch (e) {
-    Logger.log("[ERRORE CRITICO JOB BUDGET] " + e.message);
+    Logger.log(" Fallimento durante syncBudgetExportTable_: " + e.message);
   } finally {
+    // Rilascio garantito del mutex
     lock.releaseLock();
   }
 }
