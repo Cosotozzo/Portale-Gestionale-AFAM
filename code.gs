@@ -795,26 +795,27 @@ function fetchPendingUsers(token) {
 }
 
 function updateUserStatus(token, userId, action) {
+  // 1. VALIDAZIONE ZERO TRUST (Fuori dal Lock)
+  var userCtx = verifySessionAndGetUser(token);
+  if (String(userCtx.ruolo).toUpperCase() !== 'ADMIN') throw new Error("Non autorizzato.");
+  
+  var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+  var sheet = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
+  
+  // 2. SEZIONE CRITICA OTTIMIZZATA
   var lock = LockService.getScriptLock();
   try {
-      lock.waitLock(10000);
-      var userCtx = verifySessionAndGetUser(token);
-      if (String(userCtx.ruolo).toUpperCase() !== 'ADMIN') throw new Error("Non autorizzato.");
+      lock.waitLock(10000); // L'attesa masisma si saturerà raramente adesso
       
-      var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
-      var sheet = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
-      var data = sheet.getDataRange().getValues();
+      // O(1) Lookup con TextFinder invece di getDataRange() sotto lock
+      var searchRange = sheet.getRange(1, COL_MAP.CRED.ID + 1, sheet.getLastRow(), 1);
+      var finder = searchRange.createTextFinder(String(userId)).matchEntireCell(true);
+      var result = finder.findNext();
       
-      var found = false;
-      for (var i = 1; i < data.length; i++) {
-          if (String(data[i][COL_MAP.CRED.ID]) === String(userId)) {
-              var newState = (action === 'APPROVE') ? 'ATTIVO' : 'RIFIUTATO';
-              sheet.getRange(i + 1, COL_MAP.CRED.STATO + 1).setValue(newState);
-              found = true;
-              break;
-          }
-      }
-      if(!found) throw new Error("Utente non trovato.");
+      if(!result) throw new Error("Utente non trovato.");
+      
+      var newState = (action === 'APPROVE') ? 'ATTIVO' : 'RIFIUTATO';
+      sheet.getRange(result.getRow(), COL_MAP.CRED.STATO + 1).setValue(newState);
       
       SpreadsheetApp.flush();
       return { success: true, message: "Stato utente aggiornato a: " + (action === 'APPROVE' ? 'ATTIVO' : 'RIFIUTATO') };
@@ -824,7 +825,6 @@ function updateUserStatus(token, userId, action) {
       lock.releaseLock();
   }
 }
-// FINE MODIFICA
 
 function registerUser(formObject) {
   try {
@@ -1473,88 +1473,111 @@ function toggleScambioBudget(token, newState) {
  * Sostituisce tutte le versioni precedenti di annullaTransazioneMinistero e rimuove la dipendenza da validazioneToken
  */
 function annullaTransazioneMinistero(token, idTrans) {
-    const lock = LockService.getScriptLock();
-try {
-        // 1. VALIDAZIONE PERMESSI FUORI DAL LOCK (Previene blocchi per query non autorizzate)
-        const userCtx = verifySessionAndGetUser(token);
-        const ruolo = String(userCtx.ruolo).toUpperCase().trim();
-        
-        if (ruolo !== 'ADMIN' && ruolo !== 'MINISTERO') {
-            Logger.log(`[SECURITY] Tentativo di annullamento illegale da: ${userCtx.username}`);
-            throw new Error("Autorizzazione insufficiente: Funzione riservata al Ministero o Admin.");
-        }
-        
-        if (!lock.tryLock(15000)) throw new Error("Sistema occupato, riprova.");
-        
-        Logger.log(`[ROLLBACK] Avvio procedura per ID: ${idTrans} richiesto da ${ruolo}`);
+    // 1. VALIDAZIONE E RECUPERO DATI FUORI DAL LOCK (Lock Striping)
+    const userCtx = verifySessionAndGetUser(token);
+    const ruolo = String(userCtx.ruolo).toUpperCase().trim();
+    
+    if (ruolo !== 'ADMIN' && ruolo !== 'MINISTERO') {
+        Logger.log(`[SECURITY] Tentativo di annullamento illegale da: ${userCtx.username}`);
+        throw new Error("Autorizzazione insufficiente: Funzione riservata al Ministero o Admin.");
+    }
 
-        // 2. RECUPERO DATI TRANSAZIONE
-        const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
-        const sheetTransazioni = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
-        
-        // Uso TextFinder per prestazioni ottimali
-        const finder = sheetTransazioni.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheetTransazioni.getLastRow(), 1)
-                                       .createTextFinder(idTrans).matchEntireCell(true);
-        const cellTrans = finder.findNext();
-        
-        if (!cellTrans) throw new Error("Transazione non trovata.");
-        
-        const rigaTransazione = cellTrans.getRow();
-        const transazione = sheetTransazioni.getRange(rigaTransazione, 1, 1, sheetTransazioni.getLastColumn()).getValues()[0];
-        
-        const stato = transazione[COL_MAP.BUDGET_TRANS.STATO];
-        if (stato !== 'ACCETTATA') {
-            throw new Error("Solo le transazioni in stato ACCETTATA possono essere annullate.");
+    const ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
+    const sheetTransazioni = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+    
+    // Lettura iniziale fuori lock
+    const finder = sheetTransazioni.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheetTransazioni.getLastRow(), 1)
+                                   .createTextFinder(idTrans).matchEntireCell(true);
+    const cellTrans = finder.findNext();
+    if (!cellTrans) throw new Error("Transazione non trovata.");
+    
+    const rigaTransazione = cellTrans.getRow();
+    const transazione = sheetTransazioni.getRange(rigaTransazione, 1, 1, sheetTransazioni.getLastColumn()).getValues()[0];
+    const stato = transazione[COL_MAP.BUDGET_TRANS.STATO];
+    
+    if (stato !== 'ACCETTATA') throw new Error("Solo le transazioni in stato ACCETTATA possono essere annullate.");
+    
+    let payload = {};
+    try { payload = JSON.parse(transazione[COL_MAP.BUDGET_TRANS.JSON_BLOB]); } 
+    catch(e) { throw new Error("Dati transazione corrotti."); }
+    
+    const idAcquirente = String(transazione[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+    
+    // 2. PRE-CALCOLO SALDI IN MEMORIA
+    const sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
+    const baseData = sheetBase.getDataRange().getValues();
+    let budgetInizialeAcq = 0;
+    
+    for(let i=1; i<baseData.length; i++) {
+        if(String(baseData[i][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idAcquirente) {
+            budgetInizialeAcq = parseFloat(baseData[i][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
+            break;
         }
-        
-        // Lettura payload JSON per importo
-        let payload = {};
-        try { payload = JSON.parse(transazione[COL_MAP.BUDGET_TRANS.JSON_BLOB]); } 
-        catch(e) { throw new Error("Dati transazione corrotti."); }
-        
-        const importo = parseFloat(payload.importo_richiesto);
-        const idAcquirente = String(transazione[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
-        
-        // 3. PROTEZIONE ROLLBACK (Verifica scoperto Acquirente)
-        const sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
-        const baseData = sheetBase.getDataRange().getValues();
-        let budgetInizialeAcq = 0;
-        
-        for(let i=1; i<baseData.length; i++) {
-            if(String(baseData[i][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idAcquirente) {
-                budgetInizialeAcq = parseFloat(baseData[i][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
-                break;
-            }
-        }
-        
-        const transData = sheetTransazioni.getDataRange().getValues();
-        let entrateAcq = 0;
-        let usciteAcq = 0;
-        
-        for (let t = 1; t < transData.length; t++) {
-            const reqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
-            const cedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
-            const tStato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+    }
+    
+    const initialLastRow = sheetTransazioni.getLastRow();
+    let entrateAcq = 0;
+    let usciteAcq = 0;
+    
+    if (initialLastRow > 1) {
+        const transData = sheetTransazioni.getRange(2, 1, initialLastRow - 1, sheetTransazioni.getLastColumn()).getValues();
+        transData.forEach(row => {
+            if(row[COL_MAP.BUDGET_TRANS.ID_TRANS] === idTrans) return; // Escludo transazione da stornare
+            const reqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+            const cedId = String(row[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+            const tStato = row[COL_MAP.BUDGET_TRANS.STATO];
             
-            // Ignoriamo la transazione che stiamo per annullare dal calcolo
-            if(transData[t][COL_MAP.BUDGET_TRANS.ID_TRANS] === idTrans) continue;
+            if (reqId !== idAcquirente && cedId !== idAcquirente) return; // Culling immediato
             
-            let tPayload = {};
-            try { tPayload = JSON.parse(transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB]); } catch(e){}
-            const tImporto = parseFloat(tPayload.importo_richiesto) || 0;
+            let tImporto = 0;
+            try { tImporto = parseFloat(JSON.parse(row[COL_MAP.BUDGET_TRANS.JSON_BLOB]).importo_richiesto) || 0; } catch(e){}
             
             if (reqId === idAcquirente && tStato === 'ACCETTATA') entrateAcq += tImporto;
-            if (cedId === idAcquirente && (tStato === 'ACCETTATA' || tStato === 'INVIATA' || tStato === 'IN_INTEGRAZIONE')) usciteAcq += tImporto;
+            if (cedId === idAcquirente && ['ACCETTATA', 'INVIATA', 'IN_INTEGRAZIONE'].includes(tStato)) usciteAcq += tImporto;
+        });
+    }
+
+    // 3. SEZIONE CRITICA (Latenza ridotta drasticamente)
+    const lock = LockService.getScriptLock();
+    try {
+        if (!lock.tryLock(15000)) throw new Error("Sistema occupato, riprova.");
+        Logger.log(`[ROLLBACK] Avvio procedura per ID: ${idTrans} richiesto da ${ruolo}`);
+        SpreadsheetApp.flush();
+        
+        // Calcolo Delta (eventuali scritture avvenute in altri theard durante il tryLock)
+        const currentLastRow = sheetTransazioni.getLastRow();
+        if (currentLastRow > initialLastRow) {
+            const deltaRows = currentLastRow - initialLastRow;
+            const deltaData = sheetTransazioni.getRange(initialLastRow + 1, 1, deltaRows, sheetTransazioni.getLastColumn()).getValues();
+            
+            deltaData.forEach(row => {
+                if(row[COL_MAP.BUDGET_TRANS.ID_TRANS] === idTrans) return;
+                const reqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+                const cedId = String(row[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+                const dStato = row[COL_MAP.BUDGET_TRANS.STATO];
+                
+                if (reqId !== idAcquirente && cedId !== idAcquirente) return;
+                
+                let dImporto = 0;
+                try { dImporto = parseFloat(JSON.parse(row[COL_MAP.BUDGET_TRANS.JSON_BLOB]).importo_richiesto) || 0; } catch(e){}
+                
+                if (reqId === idAcquirente && dStato === 'ACCETTATA') entrateAcq += dImporto;
+                if (cedId === idAcquirente && ['ACCETTATA', 'INVIATA', 'IN_INTEGRAZIONE'].includes(dStato)) usciteAcq += dImporto;
+            });
         }
         
         const saldoDisponibilePostRollback = budgetInizialeAcq + entrateAcq - usciteAcq;
-        
         if (saldoDisponibilePostRollback < 0) {
             Logger.log(`[ROLLBACK NEGATO] ID: ${idTrans}. Saldo insufficiente (${saldoDisponibilePostRollback}).`);
             throw new Error(`Impossibile annullare: l'istituzione ha già impegnato i fondi acquisiti in scambi successivi. Il rollback porterebbe il saldo in negativo.`);
         }
         
-        // 4. ESECUZIONE ROLLBACK E AGGIORNAMENTO JSON_BLOB
+        // Find posizionale sotto-lock prima della scrittura
+        const finderSafe = sheetTransazioni.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, currentLastRow, 1).createTextFinder(idTrans).matchEntireCell(true);
+        const cellSafe = finderSafe.findNext();
+        if(!cellSafe) throw new Error("Transazione non trovata durante la scrittura.");
+        const rigaDefinitiva = cellSafe.getRow();
+        
         payload.history = payload.history || [];
         payload.history.push({
             timestamp: new Date().toISOString(),
@@ -1563,15 +1586,14 @@ try {
             azione: "ANNULLAMENTO_MINISTERO",
             note: `Annullata da ${ruolo} in data ${new Date().toLocaleDateString('it-IT')}`
         });
-
-        sheetTransazioni.getRange(rigaTransazione, COL_MAP.BUDGET_TRANS.STATO + 1).setValue('ANNULLATA_MINISTERO');
-        sheetTransazioni.getRange(rigaTransazione, COL_MAP.BUDGET_TRANS.JSON_BLOB + 1).setValue(JSON.stringify(payload));
+        
+        sheetTransazioni.getRange(rigaDefinitiva, COL_MAP.BUDGET_TRANS.STATO + 1).setValue('ANNULLATA_MINISTERO');
+        sheetTransazioni.getRange(rigaDefinitiva, COL_MAP.BUDGET_TRANS.JSON_BLOB + 1).setValue(JSON.stringify(payload));
         
         SpreadsheetApp.flush();
         Logger.log(`[ROLLBACK COMPLETATO] Transazione ${idTrans} annullata con successo.`);
         
         return { success: true, message: "Transazione annullata. I fondi sono stati stornati." };
-
     } catch (e) {
         Logger.log("Errore annullaTransazioneMinistero: " + e.message);
         return { success: false, message: e.message };
@@ -1706,6 +1728,45 @@ const searchRange = sheet.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheet.g
     try {
       payload = JSON.parse(transazione[COL_MAP.BUDGET_TRANS.JSON_BLOB]);
     } catch(e) { payload = { history: [] }; }
+
+// Controllo capienza portafoglio reiterato in fase di ACCETTAZIONE sotto lock (Prevenzione Race Condition / Variazione Budget Base)
+    if (azione === 'ACCETTATA') {
+      const sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
+      const baseData = sheetBase.getDataRange().getValues();
+      const rowCedente = baseData.find((row, idx) => idx > 0 && String(row[COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idCedente);
+      const budgetInizialeCedente = rowCedente ? (parseFloat(rowCedente[COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0) : 0;
+      
+      let usciteCedente = 0;
+      let entrateCedente = 0;
+      const transData = sheet.getDataRange().getValues();
+      
+      transData.forEach((row, idx) => {
+        if (idx === 0) return; // Salta header
+        const tReqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+        const tCedId = String(row[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+        const tStato = row[COL_MAP.BUDGET_TRANS.STATO];
+        
+        if (tReqId !== idCedente && tCedId !== idCedente) return;
+        
+        let tImporto = 0;
+        try { 
+          tImporto = parseFloat(JSON.parse(row[COL_MAP.BUDGET_TRANS.JSON_BLOB]).importo_richiesto) || 0; 
+        } catch(e) {}
+
+        if (tReqId === idCedente && tStato === 'ACCETTATA') entrateCedente += tImporto;
+        if (tCedId === idCedente && ['ACCETTATA', 'INVIATA', 'IN_INTEGRAZIONE'].includes(tStato)) {
+          // Escludiamo la transazione corrente per calcolare il saldo disponibile PRIMA di questa uscita
+          if (row[COL_MAP.BUDGET_TRANS.ID_TRANS] !== id) usciteCedente += tImporto;
+        }
+      });
+      
+      const currentImporto = parseFloat(payload.importo_richiesto) || 0;
+      const saldoDisponibile = budgetInizialeCedente + entrateCedente - usciteCedente;
+      
+      if (currentImporto > saldoDisponibile) {
+        throw new Error("Saldo insufficiente al momento dell'accettazione. Il budget base è stato modificato o i fondi sono impegnati altrove.");
+      }
+    }
 
     payload.history = payload.history || [];
     payload.history.push({
