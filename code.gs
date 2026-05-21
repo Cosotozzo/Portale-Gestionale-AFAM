@@ -195,25 +195,31 @@ function isScambioBudgetAttivo() {
   }
 }
 
-// --- CORE: GESTIONE SESSIONE (SICUREZZA & PERFORMANCE) ---
-
+/**
+ * CORE: GESTIONE SESSIONE (SICUREZZA ZERO TRUST & PERFORMANCE)
+ * Risolve CWE-843 (Type Confusion) ed evita l'appropriazione di identità di utenti offline.
+ */
 function verifySessionAndGetUser(token) {
-  if (!token) throw new Error("Sessione non valida. Effettua nuovamente il login.");
+  // 1. VALIDAZIONE ZERO TRUST STRUTTURALE (Strict Type Checking)
+  if (!token || typeof token !== 'string' || token.trim().length === 0) {
+    throw new Error("Sessione non valida. Token mancante o formato compromesso. Accesso negato.");
+  }
   
-  // 1. PROVA A LEGGERE DALLA CACHE VELOCE
+  const cleanToken = token.trim();
+
+  // 2. PROVA A LEGGERE DALLA CACHE VELOCE
   const cache = CacheService.getScriptCache();
-  const cachedUser = cache.get("SESSION_" + token);
+  const cachedUser = cache.get("SESSION_" + cleanToken);
   if (cachedUser) {
     return JSON.parse(cachedUser);
   }
 
-  // 2. FALLBACK: SE NON IN CACHE, USA TEXTFINDER (VELOCE)
+  // 3. FALLBACK: SE NON IN CACHE, USA TEXTFINDER (VELOCE)
   const ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
   const sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
   
-  // TextFinder mirato sulla colonna SESSION_ID
   const finder = sheetCred.getRange(1, COL_MAP.CRED.SESSION_ID + 1, sheetCred.getLastRow(), 1)
-                          .createTextFinder(token)
+                          .createTextFinder(cleanToken)
                           .matchEntireCell(true);
   const result = finder.findNext();
   
@@ -221,13 +227,19 @@ function verifySessionAndGetUser(token) {
     const rowIndex = result.getRow();
     const rowData = sheetCred.getRange(rowIndex, 1, 1, sheetCred.getLastColumn()).getValues()[0];
     
+    // 4. VERIFICA SECONDARIA ZERO TRUST (Integrità del Dato)
+    const dbToken = String(rowData[COL_MAP.CRED.SESSION_ID]).trim();
+    if (dbToken !== cleanToken || cleanToken === "") {
+      throw new Error("Integrità sessione compromessa. Tentativo di bypass rilevato.");
+    }
+
     if (rowData[COL_MAP.CRED.STATO] !== 'ATTIVO') throw new Error("Utenza disabilitata o non autorizzata.");
     
     try { 
       sheetCred.getRange(rowIndex, COL_MAP.CRED.LAST_LOGIN + 1).setValue(new Date());
     } catch(e){}
 
-const userObj = {
+    const userObj = {
       rowIndex: rowIndex,
       username: rowData[COL_MAP.CRED.USERNAME],
       istituzioneId: rowData[COL_MAP.CRED.ISTITUZIONE_ID],
@@ -237,8 +249,9 @@ const userObj = {
       privacyLog: rowData[COL_MAP.CRED.ACCETTAZIONE_PRIVACY],
       cookieLog: rowData[COL_MAP.CRED.ACCETTAZIONE_COOKIE]
     };
-    // 3. SALVA IN CACHE PER 20 MINUTI (1200 secondi)
-    cache.put("SESSION_" + token, JSON.stringify(userObj), 1200);
+    
+    // 5. SALVA IN CACHE PER 20 MINUTI
+    cache.put("SESSION_" + cleanToken, JSON.stringify(userObj), 1200);
     return userObj;
   }
   
@@ -1114,6 +1127,11 @@ function syncExportTable_() {
  */
 function submitBudgetRequest(token, payload) {
   try {
+    // GUARDIA PREVENTIVA: Master Switch (Previene chiamate RPC forzate a modulo chiuso)
+    if (!isScambioBudgetAttivo()) {
+        throw new Error("Il modulo Scambio Budget è attualmente disabilitato dal Ministero. Operazione bloccata.");
+    }
+
     var userCtx = verifySessionAndGetUser(token);
     var idRichiedente = String(userCtx.istituzioneId);
     var idCedente = String(payload.cedenteId).trim();
@@ -1135,14 +1153,12 @@ function submitBudgetRequest(token, payload) {
     var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
     var sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
     var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
-
-    // Guardia Zero Trust: evita errori cryptici di appendRow su null
+    
     if (!sheetBase || !sheetTrans) {
         throw new Error("Errore DB: Impossibile trovare i fogli. Verifica che i fogli " + DB_CONFIG.SHEET_BUDGET_BASE + " e " + DB_CONFIG.SHEET_BUDGET_TRANS + " esistano nel Google Sheet.");
     }
 
     // --- FASE 1: LETTURE NON CRITICHE (Fuori dal Lock) ---
-    // Il Budget Iniziale (FOGLIO 1) è considerato immutabile e non necessita di protezione lock
     var baseData = sheetBase.getDataRange().getValues();
     var budgetInizialeCedente = 0;
     
@@ -1153,13 +1169,12 @@ function submitBudgetRequest(token, payload) {
         }
     }
 
-// --- CALCOLO SALDO CEDENTE (OTTIMISTICO, FUORI DAL LOCK) ---
+    // --- CALCOLO SALDO CEDENTE ---
     var usciteCedente = 0;
     var entrateCedente = 0;
     var initialLastRow = sheetTrans.getLastRow();
     
     if (initialLastRow > 1) {
-        // Leggiamo tutto tranne l'intestazione
         var transData = sheetTrans.getRange(2, 1, initialLastRow - 1, sheetTrans.getLastColumn()).getValues();
         for (var t = 0; t < transData.length; t++) {
             var tReqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
@@ -1178,17 +1193,13 @@ function submitBudgetRequest(token, payload) {
 
     // --- FASE 2: SEZIONE CRITICA (Sotto Lock) ---
     var lock = LockService.getScriptLock();
-    // Pessimistic Locking: Timeout a 30s per scalare su 100+ occorrenze simultanee
     if (!lock.tryLock(30000)) {
       throw new Error("Il sistema è momentaneamente occupato a causa di un elevato numero di richieste. Riprovare tra qualche secondo.");
     }
 
     try {
-      // --- RICALCOLO SALDO CEDENTE (PESSIMISTICO, DELTA SOTTO LOCK) ---
-      SpreadsheetApp.flush(); // Assicura che la vista del database sia aggiornata
+      SpreadsheetApp.flush();
       var currentLastRow = sheetTrans.getLastRow();
-      
-      // Controllo del differenziale per le transazioni intercorse
       if (currentLastRow > initialLastRow) {
           var deltaRows = currentLastRow - initialLastRow;
           var deltaData = sheetTrans.getRange(initialLastRow + 1, 1, deltaRows, sheetTrans.getLastColumn()).getValues();
@@ -1209,8 +1220,6 @@ function submitBudgetRequest(token, payload) {
       }
 
       var saldoDisponibileCedente = budgetInizialeCedente + entrateCedente - usciteCedente;
-
-      // --- VERIFICA CAPIENZA ---
       if (importo > saldoDisponibileCedente) {
           throw new Error("Fondi insufficienti/già prenotati da altri enti.");
       }
@@ -1223,14 +1232,14 @@ function submitBudgetRequest(token, payload) {
         history: [
           {
             timestamp: now,
-            attore: idRichiedente,
+            attore: userCtx.username, // FIX LOG: Tracciamo l'utente reale dall'oggetto sessione
             ruolo_attore: "RICHIEDENTE",
             azione: "CREAZIONE_E_INVIO",
             note: payload.note ? String(payload.note).trim() : ""
           }
         ]
       };
-
+      
       var idTransazione = Utilities.getUuid();
       var statoIniziale = "INVIATA"; 
 
@@ -1241,12 +1250,9 @@ function submitBudgetRequest(token, payload) {
         statoIniziale,
         JSON.stringify(dataBlob)
       ]);
-
-      SpreadsheetApp.flush(); // Assicura che i dati siano scritti fisicamente prima di rilasciare il lock
+      SpreadsheetApp.flush(); 
       return { success: true };
-
     } finally {
-      // Rilascio garantito del Lock
       lock.releaseLock();
     }
 

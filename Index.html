@@ -126,6 +126,110 @@
       .module-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(0,68,136,0.15); border-bottom-color: var(--mur-cyan); }
       .card-body { padding: 2rem; text-align: center; }
       .card-icon { font-size: 2.5rem; color: var(--header-main-bg); margin-bottom: 1rem; }
+
+      /* --- DASHBOARD HERO --- */
+      .dashboard-hero {
+          background: linear-gradient(135deg, white 0%, #f8f9fa 100%);
+          border-radius: 20px;
+          padding: 2.5rem;
+          margin-bottom: 2.5rem;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+          border: 1px solid #e5e7eb;
+          position: relative;
+          overflow: hidden;
+      }
+      .dashboard-hero::after {
+          content: '';
+          position: absolute;
+          top: 0; right: 0;
+          width: 150px; height: 100%;
+          background: linear-gradient(90deg, transparent, #e6f0fa);
+          opacity: 0.5;
+          border-radius: 0 20px 20px 0;
+      }
+
+      /* --- CATEGORY SECTION --- */
+      .category-title {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #004488;
+          margin-bottom: 1.5rem;
+          display: flex;
+          align-items: center;
+          border-bottom: 2px solid #e5e7eb;
+          padding-bottom: 0.5rem;
+      }
+      .category-title i { margin-right: 10px; color: var(--header-main-bg); }
+
+      /* --- MODERN MODULE CARDS --- */
+      .module-card-modern {
+          background: white;
+          border: 1px solid #e5e7eb;
+          border-radius: 20px;
+          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          cursor: pointer;
+          height: 100%;
+          position: relative;
+          z-index: 1;
+      }
+      .module-card-modern::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; width: 100%; height: 100%;
+          border-radius: 20px;
+          box-shadow: 0 15px 30px -5px rgba(0, 102, 204, 0.15);
+          opacity: 0;
+          transition: opacity 0.3s ease;
+          z-index: -1;
+      }
+      .module-card-modern:hover {
+          transform: translateY(-5px);
+          border-color: #b3d4f5;
+      }
+      .module-card-modern:hover::before { opacity: 1; }
+      
+      .module-card-modern.disabled-card {
+          cursor: not-allowed;
+          opacity: 0.85;
+      }
+      .module-card-modern.disabled-card:hover {
+          transform: none;
+          border-color: #e5e7eb;
+      }
+      .module-card-modern.disabled-card:hover::before { opacity: 0; }
+
+      .icon-wrapper {
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1.5rem;
+          background-color: #e6f0fa;
+          color: var(--header-main-bg);
+      }
+      .module-card-modern.disabled-card .icon-wrapper {
+          background-color: #f3f4f6;
+          color: #9ca3af;
+      }
+
+      .card-title { font-size: 1.15rem; font-weight: 700; color: #1a1a1a; margin-bottom: 0.5rem; }
+      .card-text { font-size: 0.9rem; color: #5c6f82; line-height: 1.4; }
+      
+      .arrow-link { transition: color 0.2s; }
+      .module-card-modern:hover .arrow-link { color: #004488 !important; }
+      .transition-transform { transition: transform 0.2s ease; }
+      .module-card-modern:hover .transition-transform { transform: translateX(5px); }
+
+      .badge-status {
+          font-size: 0.75rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          padding: 5px 12px;
+          letter-spacing: 0.5px;
+      }
       
       /* Note Textarea con focus visibile */
       .note-textarea { 
@@ -349,24 +453,14 @@
                     <ul class="dropdown-menu w-100 shadow" id="list-reset-institution" style="max-height: 250px; overflow-y: auto;"></ul>
                 </div>
                 <div class="mb-3"><input type="text" class="form-control" id="reset-cf" placeholder="Codice Fiscale" required></div>
-                <div class="mb-3"><input type="email" class="form-control" id="reset-email" placeholder="Email" required></div>
+<div class="mb-3"><input type="email" class="form-control" id="reset-email" placeholder="Email" required></div>
 <div class="mb-3 position-relative">
                     <input type="password" class="form-control pe-5" id="reset-pin" placeholder="PIN" required>
                     <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y px-3 shadow-none toggle-password" data-target="reset-pin">
                         <i class="far fa-eye text-muted"></i>
                     </button>
                 </div>
-                <div class="mb-3 position-relative">
-                    <input type="password" class="form-control pe-5" id="reset-new-pass" placeholder="Nuova Password" required>
-                    <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y px-3 shadow-none toggle-password" data-target="reset-new-pass">
-                        <i class="far fa-eye text-muted"></i>
-                    </button>
-                </div>
                 
-                <div class="d-flex justify-content-between">
-                    <button type="button" class="btn btn-outline-secondary" onclick="showView('view-login')">Annulla</button>
-                    <button type="button" class="btn-login w-50" onclick="submitReset()">Salva</button>
-                </div>
                 <div class="row mb-3">
                     <div class="col-md-6 mb-3 mb-md-0 position-relative">
                         <input type="password" class="form-control pe-5" id="reset-new-pass" placeholder="Nuova Password" required>
@@ -403,93 +497,23 @@
       </div>
 
 <div id="view-gateway" class="view-section hidden">
-         <h2 class="mb-5 fw-bold" style="color: var(--header-main-bg); border-left: 5px solid var(--mur-cyan); padding-left: 15px;">Dashboard Servizi</h2>
-         <div class="row g-4">
-            <div class="col-md-6 col-lg-3">
-               <div class="module-card" onclick="handleModuleAccess('CESSAZIONI')">
-                 <div class="card-body">
-                    <i class="fas fa-user-times card-icon"></i>
-                    <h5 class="card-title">Validazione cessazioni</h5>
-                 </div>
-               </div>
-            </div>
-
-            <div class="col-md-6 col-lg-3">
-                <div class="module-card" onclick="handleModuleAccess('RCA')">
-                    <div class="card-body">
-                        <i class="fas fa-users-cog card-icon"></i>
-                        <h5 class="card-title">R.C.A. e R.G.U.</h5>
+            <div class="dashboard-hero mb-4">
+                <div class="row align-items-center">
+                    <div class="col-md-8 position-relative z-1">
+                        <h2 class="fw-bold mb-2" style="color: #004488;">Benvenuto/a, <span id="hero-user-name">Utente</span></h2>
+                        <p class="text-muted fs-5 mb-0">Seleziona un'area operativa.</p>
+                    </div>
+                    <div class="col-md-4 text-end d-none d-md-block position-relative z-1">
+                        <div class="d-inline-flex flex-column text-start bg-white p-3 rounded-custom shadow-sm border">
+                            <span class="small text-muted text-uppercase fw-bold"><i class="far fa-calendar-alt me-1"></i> Anno Accademico</span>
+                            <span class="fs-5 fw-bold" style="color: var(--header-main-bg);">2025 / 2026</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="col-md-6 col-lg-3">
-                <div class="module-card" onclick="handleModuleAccess('BUDGET_ORG')">
-                    <div class="card-body">
-                        <i class="fas fa-chart-pie card-icon"></i>
-                        <h5 class="card-title">Scambio Budget Organico</h5>
-                    </div>
+            <div id="dashboard-categories-container">
                 </div>
-            </div>
-
-<div class="col-md-6 col-lg-3">
-                <div class="module-card" onclick="handleModuleAccess('BUDGET_ASS')">
-                    <div class="card-body">
-                        <i class="fas fa-chart-pie card-icon"></i>
-                        <h5 class="card-title">Scambio Budget Assunzionale</h5>
-                    </div>
-                </div>
-            </div>
-
-<div class="col-md-6 col-lg-3">
-                <div class="module-card" onclick="handleModuleAccess('BUDGET_ASS_2026/2027')">
-                    <div class="card-body">
-                        <i class="fas fa-dollar-sign card-icon"></i>
-                        <h5 class="card-title">Budget Assunzionale a.a. 2026/2027</h5>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-6 col-lg-3">
-                <div class="module-card" onclick="handleModuleAccess('COM_INCARICHI_EQ')">
-                    <div class="card-body">
-                        <i class="fas fa-file-signature card-icon"></i>
-                        <h5 class="card-title">Comunicazione Incarichi E.Q.</h5>
-                    </div>
-                </div>
-            </div>
-
-<div class="col-md-6 col-lg-3">
-                <div class="module-card" onclick="handleModuleAccess('AFAM_AI')">
-                    <div class="card-body">
-                        <i class="fas fa-robot card-icon"></i>
-                        <h5 class="card-title">AFAM A.I.</h5>
-                    </div>
-                </div>
-            </div>
-
-<div class="col-md-6 col-lg-3 hidden" id="module-card-users">
-                <div class="module-card" onclick="handleModuleAccess('UTENZE')">
-                    <div class="card-body">
-                        <i class="fas fa-user-check card-icon"></i>
-                        <h5 class="card-title">Gestione Utenze</h5>
-                    </div>
-                </div>
-            </div>
-
-         </div>
-
-          <div class="col-md-6 col-lg-3 hidden" id="module-card-finestre">
-                          <div class="module-card" style="border-bottom-color: var(--mur-yellow);" onclick="handleModuleAccess('FINESTRE')">
-                              <div class="card-body">
-                                  <i class="fas fa-calendar-alt card-icon" style="color: var(--mur-yellow);"></i>
-                                  <h5 class="card-title">Apertura Finestre</h5>
-                                  <p class="card-text">Gestione Periodi</p>
-                              </div>
-                          </div>
-                      </div>
-          </div>
-
       </div>
 
       <div id="view-module-cessazioni" class="view-section hidden">

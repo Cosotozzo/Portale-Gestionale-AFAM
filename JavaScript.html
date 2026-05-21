@@ -131,8 +131,7 @@ function checkStoredSession() {
   }
 
 function updateUserInterface(user) {
-// Aggiorna Nome Utente e Istituzione nella Navbar
-      const elName = document.getElementById('nav-user-name');
+const elName = document.getElementById('nav-user-name');
       const elInst = document.getElementById('nav-user-inst');
       
       if(elName) elName.innerText = escapeHtml(user.nome + " " + user.cognome);
@@ -143,22 +142,103 @@ function updateUserInterface(user) {
               elInst.innerText = "Ministero dell'Università e della Ricerca";
           } else {
               elInst.innerText = user.istituzioneNome ? escapeHtml(user.istituzioneNome) : "AFAM";
-              elInst.title = user.istituzioneNome ? escapeHtml(user.istituzioneNome) : ""; // Tooltip in caso di nomi lunghi troncati
+              elInst.title = user.istituzioneNome ? escapeHtml(user.istituzioneNome) : ""; 
           }
       }
-      
-// Gestione visibilità card Admin
-      const adminCard = document.getElementById('module-card-users');
-      if(adminCard) {
-          const userRole = user.role ? String(user.role).toUpperCase().trim() : '';
-          if (userRole === 'ADMIN' || userRole === 'MINISTERO') {
-              adminCard.classList.remove('hidden');
-          } else {
-              adminCard.classList.add('hidden');
-          }
-      }
-// FINE MODIFICA
+
+      const heroName = document.getElementById('hero-user-name');
+      if(heroName) heroName.innerText = escapeHtml(user.nome);
+
+      renderModernDashboard(user);
   }
+
+const DASHBOARD_CATEGORIES = [
+    { id: "HR", label: "Gestione Personale", icon: "fa-users" },
+    { id: "ECO", label: "Risorse Economiche", icon: "fa-euro-sign" },
+    { id: "SYS", label: "Innovazione & Sistema", icon: "fa-server" }
+];
+
+const DASHBOARD_MODULES = [
+    { id: "CESSAZIONI", title: "Validazione cessazioni", desc: "Validazione cessazioni del personale di ruolo.", categoryId: "HR", icon: "fa-user-times", status: "ACTIVE" },
+    { id: "RCA", title: "R.C.A. e R.G.U.", desc: "Gestione dei Responsabili Competenze Accessorie e Responsabili Gestione Utenze (Portale NoiPA).", categoryId: "HR", icon: "fa-users-cog", status: "ACTIVE" },
+    { id: "COM_INCARICHI_EQ", title: "Comunicazione Incarichi E.Q.", desc: "Comunicazione incarichi di Elevata Qualificazione.", categoryId: "HR", icon: "fa-file-signature", status: "SOON" },
+    
+    { id: "BUDGET_ORG", title: "Scambio Budget Organico", desc: "Comunicazione scambio budget di organico tra Istituzioni.", categoryId: "ECO", icon: "fa-chart-pie", status: "ACTIVE" },
+    { id: "BUDGET_ASS", title: "Scambio Budget Assunzionale", desc: "Comunicazione scambio budget assunzionale tra Istituzioni.", categoryId: "ECO", icon: "fa-chart-line", status: "SOON" },
+    { id: "BUDGET_ASS_2026/2027", title: "Budget Assunzionale a.a 26/27", desc: "Anteprima Budget Assunzionale a.a. 2026/2027.", categoryId: "ECO", icon: "fa-wallet", status: "SOON" },
+    
+    { id: "AFAM_AI", title: "AFAM A.I.", desc: "Assistente intelligente.", categoryId: "SYS", icon: "fa-robot", status: "SOON" },
+    { id: "UTENZE", title: "Gestione Utenze", desc: "Pannello amministratore per l'approvazione e la gestione degli accessi al portale.", categoryId: "SYS", icon: "fa-user-shield", status: "ACTIVE", requiresAdmin: true },
+    { id: "FINESTRE", title: "Apertura Finestre", desc: "Gestione dei periodi di apertura moduli.", categoryId: "SYS", icon: "fa-calendar-alt", status: "ACTIVE", requiresAdmin: true }
+];
+
+function renderModernDashboard(user) {
+    const container = document.getElementById('dashboard-categories-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const userRole = user.role ? String(user.role).toUpperCase().trim() : '';
+    const isAdmin = (userRole === 'ADMIN' || userRole === 'MINISTERO');
+
+    DASHBOARD_CATEGORIES.forEach(cat => {
+        const categoryModules = DASHBOARD_MODULES.filter(m => {
+            if (m.categoryId !== cat.id) return false;
+            if (m.requiresAdmin && !isAdmin) return false;
+            return true;
+        });
+        
+        if (categoryModules.length === 0) return;
+
+        const catHtml = `
+            <div class="category-section mb-5">
+                <h4 class="category-title">
+                    <i class="fas ${cat.icon}"></i> ${cat.label}
+                </h4>
+                <div class="row g-4" id="cat-row-${cat.id}">
+                </div>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', catHtml);
+        const rowContainer = document.getElementById(`cat-row-${cat.id}`);
+
+        categoryModules.forEach(mod => {
+            const mappedConfig = MODULES_CONFIG[mod.id];
+            // Override col config reale proveniente da JavaScript.html (Così le rotte dinamiche funzionano)
+            let currentStatus = mappedConfig ? (mappedConfig.status === 'DYNAMIC' ? 'ACTIVE' : mappedConfig.status) : mod.status;
+
+            const isActive = currentStatus === 'ACTIVE';
+            const badgeHtml = isActive 
+                ? `<span class="badge bg-success rounded-pill badge-status">Attivo</span>`
+                : `<span class="badge bg-warning text-dark rounded-pill badge-status"><i class="fas fa-lock me-1"></i>Prossimamente</span>`;
+            
+            const cardClass = isActive ? 'module-card-modern' : 'module-card-modern disabled-card';
+            const actionColor = isActive ? 'text-primary' : 'text-muted';
+            const actionText = isActive ? 'Accedi' : 'Non disponibile';
+            const actionIcon = isActive ? '<i class="fas fa-arrow-right ms-2 transition-transform"></i>' : '';
+
+            const cardHtml = `
+                <div class="col-md-6 col-lg-4">
+                    <div class="${cardClass}" onclick="handleModuleAccess('${mod.id}')" role="button">
+                        <div class="card-body p-4 d-flex flex-column h-100 text-start">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="icon-wrapper shadow-sm">
+                                    <i class="fas ${mod.icon}"></i>
+                                </div>
+                                ${badgeHtml}
+                            </div>
+                            <h5 class="card-title text-start">${mod.title}</h5>
+                            <p class="card-text flex-grow-1 text-start">${mod.desc}</p>
+                            <div class="mt-3 ${actionColor} fw-bold small text-uppercase d-flex align-items-center arrow-link">
+                                ${actionText} ${actionIcon}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            rowContainer.insertAdjacentHTML('beforeend', cardHtml);
+        });
+    });
+}
 
   // --- NAVIGAZIONE ---
   function showView(viewId) {
@@ -646,7 +726,7 @@ function populateSelects(list) {
 
 function submitRegistration() {
      const inst = document.getElementById('institution-select').value;
-     if (!inst) return showToast("Compilare i campi", 'error');
+     if (!inst) return showToast("Compilare i campi obbligatori", 'error');
 
 // Validazione consensi espliciti (Zero Trust Client-side)
      if (!document.getElementById('reg-privacy').checked || !document.getElementById('reg-cookie').checked) {
@@ -688,7 +768,7 @@ function submitRegistration() {
 
 function submitReset() {
       const inst = document.getElementById('reset-institution').value;
-      if (!inst) return showToast("Compilare i campi", 'error');
+      if (!inst) return showToast("Compilare i campi obbligatori", 'error');
 
       // Validazione requisiti password lato client (Zero Trust Client-side)
       if (typeof window.isResetPasswordValid === 'function' && !window.isResetPasswordValid()) {
