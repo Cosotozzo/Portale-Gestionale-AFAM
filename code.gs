@@ -70,7 +70,8 @@ const COL_MAP = {
   CRED: {
     ID: 0, CF: 1, ISTITUZIONE_ID: 2, NOME: 3, COGNOME: 4, USERNAME: 5,
     HASH: 6, SALT: 7, RUOLO: 8, PIN: 9, STATO: 11, SESSION_ID: 14, 
-    LAST_LOGIN: 15, ACCETTAZIONE_PRIVACY: 16, ACCETTAZIONE_COOKIE: 17
+LAST_LOGIN: 15, ACCETTAZIONE_PRIVACY: 16, ACCETTAZIONE_COOKIE: 17,
+    DATA_NASCITA: 18, SESSO: 19
   },
   ANAG_CESS: {
     ID_CESSAZIONE: 0, ID_ISTITUZIONE: 1, NOME: 3, COGNOME: 4, CF: 5, QUALIFICA: 6
@@ -247,7 +248,9 @@ function verifySessionAndGetUser(token) {
       nome: rowData[COL_MAP.CRED.NOME],
       cognome: rowData[COL_MAP.CRED.COGNOME],
       privacyLog: rowData[COL_MAP.CRED.ACCETTAZIONE_PRIVACY],
-      cookieLog: rowData[COL_MAP.CRED.ACCETTAZIONE_COOKIE]
+      cookieLog: rowData[COL_MAP.CRED.ACCETTAZIONE_COOKIE],
+      dataNascita: rowData[COL_MAP.CRED.DATA_NASCITA],
+      sesso: rowData[COL_MAP.CRED.SESSO]
     };
     
     // 5. SALVA IN CACHE PER 20 MINUTI
@@ -279,7 +282,8 @@ return {
       istituzioneId: userCtx.istituzioneId,
       istituzioneNome: getInstitutionNameById(userCtx.istituzioneId),
       privacyAccepted: String(userCtx.privacyLog || "").includes("ACCETTATO"),
-      cookieAccepted: String(userCtx.cookieLog || "").includes("ACCETTATO")
+      cookieAccepted: String(userCtx.cookieLog || "").includes("ACCETTATO"),
+needsAnagraficaUpdate: (!userCtx.dataNascita || !userCtx.sesso)
     };
   } catch (e) {
     // Se la sessione è scaduta o invalida, il frontend dovrà fare logout
@@ -364,9 +368,9 @@ return {
       istituzioneId: targetUser[COL_MAP.CRED.ISTITUZIONE_ID],
       istituzioneNome: getInstitutionNameById(targetUser[COL_MAP.CRED.ISTITUZIONE_ID]),
       privacyAccepted: String(targetUser[COL_MAP.CRED.ACCETTAZIONE_PRIVACY] || "").includes("ACCETTATO"),
-      cookieAccepted: String(targetUser[COL_MAP.CRED.ACCETTAZIONE_COOKIE] || "").includes("ACCETTATO")
+      cookieAccepted: String(targetUser[COL_MAP.CRED.ACCETTAZIONE_COOKIE] || "").includes("ACCETTATO"),
+needsAnagraficaUpdate: (!targetUser[COL_MAP.CRED.DATA_NASCITA] || !targetUser[COL_MAP.CRED.SESSO])
     };
-
   } catch (e) {
     Logger.log("ERRORE CRITICO LOGIN: " + e.message);
     return { 
@@ -926,10 +930,11 @@ for (var i = 1; i < dataAnag.length; i++) {
         new Date(), 
         '', '', '', 
         privacyLog, 
-        cookieLog
+cookieLog,
+        String(formObject.dataNascita || "").trim(),
+        String(formObject.sesso || "").trim()
     ].map(val => (typeof val === 'string') ? sanitizeForFormulaInjection(val) : val);
-
-    // Salvataggio: Mappiamo Privacy su Colonna Q (17) e Cookie su Colonna R (18)
+// Salvataggio: Privacy (17), Cookie (18), Data Nascita (19), Sesso (20)
     sheetCred.appendRow(rowData);
     return { success: true, message: "Registrazione inviata. Attendi approvazione." };
   } catch(e) { return { success: false, message: "Errore: " + e.message }; }
@@ -2012,5 +2017,39 @@ try {
     return { success: false, message: e.message };
   } finally {
     sharedLock.releaseLock();
+  }
+}
+
+/**
+ * Registra il Catch-up dell'Anagrafica (Data nascita e Sesso) per vecchi utenti.
+ */
+function updateUserAnagrafica(token, payload) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    var userCtx = verifySessionAndGetUser(token);
+    
+    // Zero Trust Validation
+    if (!payload.dataNascita || !payload.sesso) throw new Error("Dati mancanti.");
+    
+    var ss = SpreadsheetApp.openById(DB_CONFIG.MASTER_ID);
+    var sheetCred = ss.getSheetByName(DB_CONFIG.SHEET_CREDENZIALI);
+    
+    // Aggiornamento sul foglio (Colonne S e T - indici 18 e 19, quindi colonne 19 e 20)
+    sheetCred.getRange(userCtx.rowIndex, COL_MAP.CRED.DATA_NASCITA + 1).setValue(String(payload.dataNascita).trim());
+    sheetCred.getRange(userCtx.rowIndex, COL_MAP.CRED.SESSO + 1).setValue(String(payload.sesso).trim());
+    
+    // Aggiornamento Cache
+    userCtx.dataNascita = payload.dataNascita;
+    userCtx.sesso = payload.sesso;
+    CacheService.getScriptCache().put("SESSION_" + token, JSON.stringify(userCtx), 1200);
+    
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch (e) {
+    Logger.log("Errore salvataggio anagrafica: " + e.message);
+    return { success: false, message: e.message };
+  } finally {
+    lock.releaseLock();
   }
 }

@@ -50,6 +50,8 @@ function checkStoredSession() {
                 // Controllo accettazione Privacy vecchi utenti
                 if (!res.privacyAccepted || !res.cookieAccepted) {
                     openGenericModal('MANDATORY_PRIVACY');
+                    } else if (res.needsAnagraficaUpdate) {
+                    openGenericModal('MANDATORY_ANAGRAFICA');
                 } else {
                     showView('view-gateway');
                     showToast("Bentornato/a: " + res.nome + " " + res.cognome, 'success');
@@ -422,6 +424,57 @@ if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null
                   .withFailureHandler(handleServerError)
                   .updatePrivacyCookieAcceptance(currentUser.token);
           };
+          } else if (type === 'MANDATORY_ANAGRAFICA') {
+          headerBg.className = baseHeaderClass + " bg-warning";
+          title.innerHTML = '<i class="fas fa-id-card me-2 text-dark"></i><span class="text-dark">Aggiornamento Anagrafica</span>';
+          body.innerHTML = `
+            <div class='text-start fs-6 p-2'>
+                <p class="fw-bold text-danger">Azione richiesta: Completa il tuo profilo.</p>
+                <p class="small text-muted mb-3">Per via di aggiornamenti normativi, abbiamo bisogno di acquisire le seguenti informazioni obbligatorie prima di farti accedere.</p>
+                
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted mb-1">DATA DI NASCITA</label>
+                    <input type="date" class="form-control border-warning shadow-sm" id="upd-dob" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted mb-1">SESSO</label>
+                    <select class="form-select border-warning shadow-sm" id="upd-gender" required>
+                        <option value="" disabled selected>Seleziona...</option>
+                        <option value="M">Maschile (M)</option>
+                        <option value="F">Femminile (F)</option>
+                    </select>
+                </div>
+            </div>`;
+          sub.innerText = "";
+          btn.classList.add('bg-primary');
+          btn.innerText = "Salva e Continua";
+          btn.onclick = () => {
+              const dob = document.getElementById('upd-dob').value;
+              const gender = document.getElementById('upd-gender').value;
+
+              if(!dob || !gender) {
+                  return showToast("Devi compilare tutti i campi per proseguire.", "warning");
+              }
+              toggleLoading(true);
+              google.script.run
+                  .withSuccessHandler(res => {
+                      toggleLoading(false);
+                      if (res.success) {
+                          if (genericModalInstance) genericModalInstance.hide();
+                          document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+                          document.body.classList.remove('modal-open');
+                          document.body.style.overflow = '';
+                          document.body.style.paddingRight = '';
+
+                          showView('view-gateway');
+                          showToast("Anagrafica aggiornata con successo.", "success");
+                      } else {
+                          showToast(res.message, "error");
+                      }
+                  })
+                  .withFailureHandler(handleServerError)
+                  .updateUserAnagrafica(currentUser.token, { dataNascita: dob, sesso: gender });
+          };
       }
       
       // 3. DISTRUZIONE ISTANZA PRECEDENTE (Previene memory leaks e sovrapposizioni)
@@ -490,10 +543,10 @@ const frm = document.getElementById('login-form');
           const passInput = document.getElementById('floatingPassword');
           if(passInput && passInput.type === 'text') {
               passInput.type = 'password';
-              const iconElement = document.querySelector('.toggle-password[data-target="floatingPassword"] i');
+const iconElement = document.querySelector('.toggle-password[data-target="floatingPassword"] i');
               if(iconElement) {
-                  iconElement.classList.remove('fa-eye-slash');
-                  iconElement.classList.add('fa-eye');
+                  iconElement.classList.remove('fa-eye');
+                  iconElement.classList.add('fa-eye-slash');
               }
           }
       }
@@ -532,6 +585,8 @@ const frm = document.getElementById('login-form');
 
               if (!res.privacyAccepted || !res.cookieAccepted) {
                   openGenericModal('MANDATORY_PRIVACY');
+                  } else if (res.needsAnagraficaUpdate) {
+                  openGenericModal('MANDATORY_ANAGRAFICA');
               } else {
                   showView('view-gateway');
               }
@@ -603,23 +658,37 @@ function updateRequirementUI(id, isValid) {
 
 function setupPasswordVisibilityToggle() {
     document.querySelectorAll('.toggle-password').forEach(btn => {
+        const targetId = btn.getAttribute('data-target');
+        const targetEl = document.getElementById(targetId);
+        const icon = btn.querySelector('i');
+        
+        // 1. INIZIALIZZAZIONE (Zero Trust sulla View HTML)
+        // Allinea istantaneamente l'icona allo stato reale dell'input al caricamento
+        if (targetEl && icon) {
+            if (targetEl.type === 'password') {
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+
+        // 2. LOGICA DI TOGGLE (Stato Attuale)
         btn.addEventListener('click', function() {
-            const targetId = this.getAttribute('data-target');
-            const targetEl = document.getElementById(targetId);
             if (!targetEl) return;
             
-            const icon = this.querySelector('i');
             if (targetEl.type === 'password') {
                 targetEl.type = 'text';
                 if (icon) {
-                    icon.classList.remove('fa-eye');
-                    icon.classList.add('fa-eye-slash');
+                    icon.classList.remove('fa-eye-slash');
+                    icon.classList.add('fa-eye'); // Testo in chiaro -> Occhio Aperto
                 }
             } else {
                 targetEl.type = 'password';
                 if (icon) {
-                    icon.classList.remove('fa-eye-slash');
-                    icon.classList.add('fa-eye');
+                    icon.classList.remove('fa-eye');
+                    icon.classList.add('fa-eye-slash'); // Testo nascosto -> Occhio Sbarrato
                 }
             }
         });
@@ -743,9 +812,11 @@ function submitRegistration() {
      // Preparazione oggetto dati
      const payload = { 
          institutionName: inst, 
-         nome: document.getElementById('reg-name').value, 
+        nome: document.getElementById('reg-name').value, 
          cognome: document.getElementById('reg-surname').value, 
-         codiceFiscale: document.getElementById('reg-cf').value, 
+         dataNascita: document.getElementById('reg-dob').value,
+         sesso: document.getElementById('reg-gender').value,
+         codiceFiscale: document.getElementById('reg-cf').value,
          email: document.getElementById('reg-email').value, 
          pin: document.getElementById('reg-pin').value, 
          password: document.getElementById('reg-pass').value,
