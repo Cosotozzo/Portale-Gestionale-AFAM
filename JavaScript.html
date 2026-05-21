@@ -415,8 +415,18 @@ if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null
                           document.body.style.overflow = '';
                           document.body.style.paddingRight = '';
 
-                          showView('view-gateway');
-                          showToast("Preferenze salvate con successo.", "success");
+// Aggiorniamo lo stato locale
+                          currentUser.privacyAccepted = true;
+                          currentUser.cookieAccepted = true;
+
+                          // Controllo a cascata: se manca l'anagrafica, apriamo il modal successivo
+                          if (currentUser.needsAnagraficaUpdate) {
+                              openGenericModal('MANDATORY_ANAGRAFICA');
+                              showToast("Preferenze salvate. Completa l'anagrafica per proseguire.", "info");
+                          } else {
+                              showView('view-gateway');
+                              showToast("Preferenze salvate con successo.", "success");
+                          }
                       } else {
                           showToast(res.message, "error");
                       }
@@ -465,6 +475,11 @@ if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null
                           document.body.classList.remove('modal-open');
                           document.body.style.overflow = '';
                           document.body.style.paddingRight = '';
+
+// Aggiorniamo lo stato locale
+                          currentUser.needsAnagraficaUpdate = false;
+                          currentUser.dataNascita = dob;
+                          currentUser.sesso = gender;
 
                           showView('view-gateway');
                           showToast("Anagrafica aggiornata con successo.", "success");
