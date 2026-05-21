@@ -1163,68 +1163,75 @@ function submitBudgetRequest(token, payload) {
         throw new Error("Errore DB: Impossibile trovare i fogli. Verifica che i fogli " + DB_CONFIG.SHEET_BUDGET_BASE + " e " + DB_CONFIG.SHEET_BUDGET_TRANS + " esistano nel Google Sheet.");
     }
 
-    // --- FASE 1: LETTURE NON CRITICHE (Fuori dal Lock) ---
-    var baseData = sheetBase.getDataRange().getValues();
-    var budgetInizialeCedente = 0;
+// --- FASE 1: LETTURE E CALCOLO IN MEMORIA (Fuori dal Lock) ---
+    // Zero Trust & Performance: 1 singola chiamata API (I/O Bulk) 
+    const baseData = sheetBase.getDataRange().getValues();
     
-    for (var i = 1; i < baseData.length; i++) {
-        if (String(baseData[i][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idCedente) {
-            budgetInizialeCedente = parseFloat(baseData[i][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
-            break;
-        }
-    }
+    // O(N) Lookup iper-veloce in RAM
+    const rowCedente = baseData.find((row, idx) => idx > 0 && String(row[COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idCedente);
+    const budgetInizialeCedente = rowCedente ? (parseFloat(rowCedente[COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0) : 0;
 
-    // --- CALCOLO SALDO CEDENTE ---
-    var usciteCedente = 0;
-    var entrateCedente = 0;
-    var initialLastRow = sheetTrans.getLastRow();
+    // --- CALCOLO SALDO CEDENTE (IN RAM) ---
+    let usciteCedente = 0;
+    let entrateCedente = 0;
+    const initialLastRow = sheetTrans.getLastRow();
     
     if (initialLastRow > 1) {
-        var transData = sheetTrans.getRange(2, 1, initialLastRow - 1, sheetTrans.getLastColumn()).getValues();
-        for (var t = 0; t < transData.length; t++) {
-            var tReqId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
-            var tCedId = String(transData[t][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
-            var tStato = transData[t][COL_MAP.BUDGET_TRANS.STATO];
+        // 1 singola chiamata API bulk per l'intero storico
+        const transData = sheetTrans.getRange(2, 1, initialLastRow - 1, sheetTrans.getLastColumn()).getValues();
+        
+        // Loop in RAM ES6
+        transData.forEach(row => {
+            const tReqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+            const tCedId = String(row[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+            const tStato = row[COL_MAP.BUDGET_TRANS.STATO];
             
-            var tPayloadRaw = transData[t][COL_MAP.BUDGET_TRANS.JSON_BLOB];
-            var tPayload = {};
-            try { tPayload = JSON.parse(tPayloadRaw); } catch(e){}
-            var tImporto = parseFloat(tPayload.importo_richiesto) || 0;
+            // Skip rapido per risparmiare cicli CPU (Culling)
+            if (tReqId !== idCedente && tCedId !== idCedente) return;
+            
+            let tImporto = 0;
+            try { 
+                tImporto = parseFloat(JSON.parse(row[COL_MAP.BUDGET_TRANS.JSON_BLOB]).importo_richiesto) || 0; 
+            } catch(e) {}
 
             if (tReqId === idCedente && tStato === 'ACCETTATA') entrateCedente += tImporto;
-            if (tCedId === idCedente && (tStato === 'ACCETTATA' || tStato === 'INVIATA' || tStato === 'IN_INTEGRAZIONE')) usciteCedente += tImporto;
-        }
+            if (tCedId === idCedente && ['ACCETTATA', 'INVIATA', 'IN_INTEGRAZIONE'].includes(tStato)) usciteCedente += tImporto;
+        });
     }
 
     // --- FASE 2: SEZIONE CRITICA (Sotto Lock) ---
-    var lock = LockService.getScriptLock();
+    const lock = LockService.getScriptLock();
     if (!lock.tryLock(30000)) {
       throw new Error("Il sistema è momentaneamente occupato a causa di un elevato numero di richieste. Riprovare tra qualche secondo.");
     }
 
     try {
       SpreadsheetApp.flush();
-      var currentLastRow = sheetTrans.getLastRow();
+      const currentLastRow = sheetTrans.getLastRow();
+      
+      // Calcolo ultra-veloce del DELTA (transazioni avvenute mentre eravamo in attesa del lock)
       if (currentLastRow > initialLastRow) {
-          var deltaRows = currentLastRow - initialLastRow;
-          var deltaData = sheetTrans.getRange(initialLastRow + 1, 1, deltaRows, sheetTrans.getLastColumn()).getValues();
+          const deltaRows = currentLastRow - initialLastRow;
+          const deltaData = sheetTrans.getRange(initialLastRow + 1, 1, deltaRows, sheetTrans.getLastColumn()).getValues();
           
-          for (var d = 0; d < deltaData.length; d++) {
-              var dReqId = String(deltaData[d][COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
-              var dCedId = String(deltaData[d][COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
-              var dStato = deltaData[d][COL_MAP.BUDGET_TRANS.STATO];
+          deltaData.forEach(row => {
+              const dReqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+              const dCedId = String(row[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
+              const dStato = row[COL_MAP.BUDGET_TRANS.STATO];
               
-              var dPayloadRaw = deltaData[d][COL_MAP.BUDGET_TRANS.JSON_BLOB];
-              var dPayload = {};
-              try { dPayload = JSON.parse(dPayloadRaw); } catch(e){}
-              var dImporto = parseFloat(dPayload.importo_richiesto) || 0;
+              if (dReqId !== idCedente && dCedId !== idCedente) return;
+              
+              let dImporto = 0;
+              try { 
+                  dImporto = parseFloat(JSON.parse(row[COL_MAP.BUDGET_TRANS.JSON_BLOB]).importo_richiesto) || 0; 
+              } catch(e) {}
 
               if (dReqId === idCedente && dStato === 'ACCETTATA') entrateCedente += dImporto;
-              if (dCedId === idCedente && (dStato === 'ACCETTATA' || dStato === 'INVIATA' || dStato === 'IN_INTEGRAZIONE')) usciteCedente += dImporto;
-          }
+              if (dCedId === idCedente && ['ACCETTATA', 'INVIATA', 'IN_INTEGRAZIONE'].includes(dStato)) usciteCedente += dImporto;
+          });
       }
 
-      var saldoDisponibileCedente = budgetInizialeCedente + entrateCedente - usciteCedente;
+      const saldoDisponibileCedente = budgetInizialeCedente + entrateCedente - usciteCedente;
       if (importo > saldoDisponibileCedente) {
           throw new Error("Fondi insufficienti/già prenotati da altri enti.");
       }
