@@ -1141,10 +1141,15 @@ function submitBudgetRequest(token, payload) {
         throw new Error("Non è possibile richiedere budget alla propria istituzione.");
     }
 
-    var importo = parseFloat(payload.importo);
-    if (isNaN(importo) || importo <= 0) {
-        throw new Error("Importo non valido.");
+// Zero Trust: Validazione rigorosa dell'importo. 
+    // Usiamo Number() invece di parseFloat() per rifiutare stringhe miste testuali ("100abc" -> NaN)
+    // Impediamo valori negativi, zero, Type Confusion e iniezioni di Array/Object.
+    var importo = Number(payload.importo);
+    if (isNaN(importo) || importo <= 0 || typeof payload.importo === 'boolean' || typeof payload.importo === 'object') {
+        throw new Error("Errore di sicurezza: Importo non valido, corrotto o manipolato.");
     }
+    // Normalizzazione a 2 decimali come standard valutario e cast a Number puro
+    importo = Math.round(importo * 100) / 100;
 
     if (payload.confermaDelibera !== true) {
         throw new Error("È obbligatorio confermare la delibera di variazione di organico.");
