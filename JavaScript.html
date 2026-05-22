@@ -16,15 +16,15 @@
   let inactivityTimer;
 
 const MODULES_CONFIG = {
-    'RCA': { status: 'ACTIVE', action: openRguRcaModule },
-    'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
-    'BUDGET_ORG': { status: 'DYNAMIC', action: openBudgetOrganicoModule },
+    'RCA': { status: 'ACTIVE', action: () => { if(typeof openRguRcaModule === 'function') openRguRcaModule(); } },
+    'CESSAZIONI': { status: 'ACTIVE', action: () => { if(typeof openCessazioniModule === 'function') openCessazioniModule(); } },
+    'BUDGET_ORG': { status: 'DYNAMIC', action: () => { if(typeof openBudgetOrganicoModule === 'function') openBudgetOrganicoModule(); } },
     'BUDGET_ASS': { status: 'SOON', msg: 'Servizio in attivazione.' },
-    'UTENZE': { status: 'ACTIVE', action: openUsersModule },
+    'UTENZE': { status: 'ACTIVE', action: () => { if(typeof openUsersModule === 'function') openUsersModule(); } },
     'BUDGET_ASS_2026/2027': { status: 'SOON', msg: 'Servizio in attivazione.' },
-        'COM_INCARICHI_EQ': { status: 'SOON', msg: 'Servizio in attivazione.' },
-    'AFAM_AI': { status: 'SOON', msg: 'Servizio in attivazione.' },
-  };
+    'COM_INCARICHI_EQ': { status: 'SOON', msg: 'Servizio in attivazione.' },
+    'AFAM_AI': { status: 'SOON', msg: 'Servizio in attivazione.' }
+};
 
 // --- INIZIALIZZAZIONE (Gestione F5 e Refresh) ---
 document.addEventListener('DOMContentLoaded', function() {
