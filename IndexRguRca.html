@@ -1,0 +1,120 @@
+<div id="view-rgu-inst" class="w-100 hidden">
+  <div class="card border-0 shadow-sm mb-4 rounded-custom">
+    <div class="card-body p-4">
+      <div class="d-flex justify-content-between align-items-start mb-4 border-bottom pb-3">
+        <div>
+          <h4 class="fw-bold text-primary mb-1 text-uppercase" id="rgu-denom-ist">Caricamento...</h4>
+          <div class="text-muted">Gestione RGU (Responsabile Utenze) e RCA (Responsabile Competenze)</div>
+        </div>
+      </div>
+      
+      <div class="bg-light p-4 rounded border mb-5">
+        <h5 class="fw-bold mb-3"><i class="fas fa-user-plus me-2 text-primary"></i>Nuova Nomina</h5>
+        <div class="row g-3">
+          <div class="col-md-4 position-relative">
+            <label class="form-label small fw-bold text-muted">Ricerca Dipendente</label>
+            <input type="text" class="form-control bg-white" id="rgu-search-emp" placeholder="Inizia a digitare..." autocomplete="off">
+            <ul class="dropdown-menu w-100 shadow" id="rgu-list-emp" style="max-height: 200px; overflow-y: auto;"></ul>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-bold text-muted">Ruolo da Assegnare</label>
+            <select class="form-select bg-white" id="rgu-ruolo-target">
+              <option value="" disabled selected>Seleziona...</option>
+              <option value="RGU">RGU - Resp. Gestione Utenze (Max 1)</option>
+              <option value="RCA">RCA - Resp. Competenze Accessorie (Max 2)</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-bold text-muted">Profilo Qualifica</label>
+            <select class="form-select bg-white" id="rgu-profilo-sel" onchange="rguHandleConditionalFields()">
+              <option value="" disabled selected>Precompilato dall'anagrafica...</option>
+              <option value="Direttore Amministrativo">Direttore Amministrativo</option>
+              <option value="Direttore di Ragioneria">Direttore di Ragioneria</option>
+              <option value="Funzionario">Funzionario</option>
+              <option value="Assistente">Assistente</option>
+              <option value="Docente">Docente</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row g-3 mt-2 hidden" id="rgu-ad-interim-box">
+          <div class="col-12">
+            <div class="form-check p-3 bg-white border border-warning rounded">
+              <input class="form-check-input ms-1 border-warning" type="checkbox" id="rgu-chk-cda" onchange="rguValidateForm()">
+              <label class="form-check-label ms-2 fw-bold text-dark" for="rgu-chk-cda">
+                Dichiaro che tale soggetto è stato formalmente incaricato dal CdA con l'incarico di Direttore di Ragioneria o Direttore Amministrativo Ad Interim.
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3 mt-2 hidden" id="rgu-docente-box">
+          <div class="col-md-6">
+            <label class="form-label small fw-bold text-muted">Qualifica Direttiva</label>
+            <select class="form-select border-danger" id="rgu-docente-qualifica" onchange="rguValidateForm()">
+              <option value="" disabled selected>Obbligatorio...</option>
+              <option value="Direttore dell'Istituto">Direttore dell'Istituto</option>
+              <option value="Vicedirettore dell'Istituto">Vicedirettore dell'Istituto</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-bold text-muted">Nota Giustificativa</label>
+            <textarea class="form-control border-danger" id="rgu-docente-nota" rows="1" placeholder="Motivazione obbligatoria..." onkeyup="rguValidateForm()"></textarea>
+          </div>
+        </div>
+
+        <div class="mt-4 text-end">
+          <button class="btn btn-primary px-4 fw-bold shadow-sm" id="rgu-btn-submit" onclick="rguSubmitNomina()" disabled>Invia Nomina</button>
+        </div>
+      </div>
+
+      <h5 class="fw-bold mb-3"><i class="fas fa-users me-2 text-success"></i>Soggetti Attualmente Nominati</h5>
+      <div class="table-responsive mb-5 border rounded">
+        <table class="table align-middle mb-0">
+          <thead class="table-light small text-muted">
+            <tr><th>Ruolo</th><th>Nominativo</th><th>C.F.</th><th>Profilo</th><th>Data Nomina</th><th class="text-center">Azione</th></tr>
+          </thead>
+          <tbody id="rgu-tbody-attivi"></tbody>
+        </table>
+      </div>
+
+      <h5 class="fw-bold mb-3"><i class="fas fa-history me-2 text-secondary"></i>Storico Nomine Cessate</h5>
+      <div class="table-responsive border rounded">
+        <table class="table align-middle mb-0">
+          <thead class="table-light small text-muted">
+            <tr><th>Ruolo</th><th>Nominativo</th><th>C.F.</th><th>Data Inizio</th><th>Data Fine</th></tr>
+          </thead>
+          <tbody id="rgu-tbody-storico"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="view-rgu-admin" class="w-100 hidden">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h3 class="fw-bold" style="color: var(--header-main-bg);">Compliance RGU & RCA</h3>
+      <p class="text-muted">Monitoraggio adempimento istituzioni per i profili su Portale NoiPA.</p>
+    </div>
+    <button class="btn btn-primary btn-sm rounded-pill" onclick="openRguRcaModule()">
+       <i class="fas fa-sync-alt me-2"></i>Aggiorna
+    </button>
+  </div>
+  <div class="card border-0 shadow-sm rounded-custom mb-5">
+    <div class="table-responsive">
+       <table class="table table-hover align-middle mb-0">
+          <thead class="table-light text-uppercase small text-muted">
+             <tr>
+                <th>Istituzione</th>
+                <th class="text-center">Stato RGU (Req: 1)</th>
+                <th class="text-center">Stato RCA (Req: 2)</th>
+                <th class="text-center">Dettagli</th>
+             </tr>
+          </thead>
+          <tbody id="rgu-tbody-admin"></tbody>
+       </table>
+    </div>
+  </div>
+</div>

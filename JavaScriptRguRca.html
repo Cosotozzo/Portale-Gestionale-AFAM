@@ -1,0 +1,215 @@
+<script>
+let rguWhitelist = [];
+let rguSelectedEmp = null;
+
+function openRguRcaModule() {
+  toggleLoading(true);
+  google.script.run
+    .withSuccessHandler(res => {
+      toggleLoading(false);
+      if (!res.success) return showToast(res.message, 'error');
+      
+      document.getElementById('view-gateway').classList.add('hidden');
+      document.getElementById('view-RCA').classList.remove('hidden');
+
+      if (res.isAdmin) {
+        document.getElementById('view-rgu-admin').classList.remove('hidden');
+        rguRenderAdminTable(res.reportData);
+      } else {
+        document.getElementById('view-rgu-inst').classList.remove('hidden');
+        document.getElementById('rgu-denom-ist').innerText = res.denom;
+        rguWhitelist = res.anagrafica;
+        rguSetupAutocomplete();
+        rguRenderInstTables(res.attivi, res.storico);
+      }
+    })
+    .withFailureHandler(handleServerError)
+    .fetchRguRcaData(currentUser.token);
+}
+
+function rguSetupAutocomplete() {
+  const input = document.getElementById('rgu-search-emp');
+  const list = document.getElementById('rgu-list-emp');
+  
+  input.addEventListener('input', function() {
+    const val = this.value.toLowerCase();
+    list.innerHTML = '';
+    rguSelectedEmp = null;
+    document.getElementById('rgu-profilo-sel').value = "";
+    rguHandleConditionalFields();
+    
+    if (!val) { list.classList.remove('show'); return; }
+
+    const filtered = rguWhitelist.filter(i => 
+       i.cognome.toLowerCase().includes(val) || 
+       i.nome.toLowerCase().includes(val) || 
+       i.cf.toLowerCase().includes(val)
+    );
+
+    if (filtered.length === 0) { list.classList.remove('show'); return; }
+
+    filtered.forEach(item => {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.className = 'dropdown-item';
+      a.style.cursor = 'pointer';
+      a.innerHTML = `<strong>${item.cognome} ${item.nome}</strong> <span class="text-muted small">(${item.cf})</span>`;
+      
+      a.addEventListener('click', () => {
+        input.value = `${item.cognome} ${item.nome}`;
+        list.classList.remove('show');
+        rguSelectedEmp = item;
+        const profSel = document.getElementById('rgu-profilo-sel');
+        
+        // Match profilo
+        let match = Array.from(profSel.options).find(o => o.value.toLowerCase() === item.profilo.toLowerCase());
+        if (match) profSel.value = match.value;
+        rguHandleConditionalFields();
+      });
+      li.appendChild(a);
+      list.appendChild(li);
+    });
+    list.classList.add('show');
+  });
+}
+
+function rguHandleConditionalFields() {
+  const prof = document.getElementById('rgu-profilo-sel').value;
+  const boxCda = document.getElementById('rgu-ad-interim-box');
+  const boxDoc = document.getElementById('rgu-docente-box');
+  
+  boxCda.classList.add('hidden');
+  boxDoc.classList.add('hidden');
+
+  if (prof === 'Funzionario' || prof === 'Assistente') {
+    boxCda.classList.remove('hidden');
+  } else if (prof === 'Docente') {
+    boxDoc.classList.remove('hidden');
+  }
+  rguValidateForm();
+}
+
+function rguValidateForm() {
+  const btn = document.getElementById('rgu-btn-submit');
+  const prof = document.getElementById('rgu-profilo-sel').value;
+  const target = document.getElementById('rgu-ruolo-target').value;
+  let isValid = !!(rguSelectedEmp && prof && target);
+
+  if (prof === 'Funzionario' || prof === 'Assistente') {
+    if (!document.getElementById('rgu-chk-cda').checked) isValid = false;
+  }
+  if (prof === 'Docente') {
+    const qual = document.getElementById('rgu-docente-qualifica').value;
+    const nota = document.getElementById('rgu-docente-nota').value.trim();
+    if (!qual || nota.length < 10) isValid = false;
+  }
+  btn.disabled = !isValid;
+}
+
+function rguSubmitNomina() {
+  const payload = {
+    nome: rguSelectedEmp.nome,
+    cognome: rguSelectedEmp.cognome,
+    cf: rguSelectedEmp.cf,
+    ruoloTarget: document.getElementById('rgu-ruolo-target').value,
+    profiloSelezionato: document.getElementById('rgu-profilo-sel').value,
+    flagIncaricoCdaAdInterim: document.getElementById('rgu-chk-cda').checked,
+    qualificaDirettivaDocente: document.getElementById('rgu-docente-qualifica').value,
+    notaGiustificativaDocente: document.getElementById('rgu-docente-nota').value
+  };
+
+  toggleLoading(true);
+  google.script.run
+    .withSuccessHandler(res => {
+      if (res.success) {
+        showToast(res.message, 'success');
+        // Reset form e Ricarica Dati
+        document.getElementById('rgu-search-emp').value = '';
+        document.getElementById('rgu-ruolo-target').value = '';
+        document.getElementById('rgu-chk-cda').checked = false;
+        document.getElementById('rgu-docente-nota').value = '';
+        rguSelectedEmp = null;
+        rguHandleConditionalFields();
+        openRguRcaModule();
+      } else {
+        toggleLoading(false);
+        showToast(res.message, 'error');
+      }
+    })
+    .withFailureHandler(handleServerError)
+    .saveRguRcaNominee(currentUser.token, payload);
+}
+
+function rguTerminate(idTrans, ruolo) {
+  confirmActionModal("Confermi la cessazione dell'incarico per questo soggetto?", () => {
+    toggleLoading(true);
+    google.script.run
+      .withSuccessHandler(res => {
+        if(res.success) { showToast(res.message, 'success'); openRguRcaModule(); }
+        else { toggleLoading(false); showToast(res.message, 'error'); }
+      })
+      .withFailureHandler(handleServerError)
+      .terminateRguRcaNominee(currentUser.token, { idTransNominaOriginale: idTrans, ruoloControllo: ruolo });
+  });
+}
+
+function rguRenderInstTables(attiviMap, storico) {
+  const tbA = document.getElementById('rgu-tbody-attivi');
+  const tbS = document.getElementById('rgu-tbody-storico');
+  tbA.innerHTML = ''; tbS.innerHTML = '';
+
+  const attivi = Object.values(attiviMap);
+  if (attivi.length === 0) tbA.innerHTML = '<tr><td colspan="6" class="text-center">Nessun responsabile attivo.</td></tr>';
+  else {
+    attivi.forEach(r => {
+      const d = new Date(r.dataAttivazione).toLocaleDateString('it-IT');
+      tbA.innerHTML += `
+        <tr>
+          <td class="fw-bold">${r.ruoloControllato}</td>
+          <td>${r.cognome} ${r.nome}</td>
+          <td>${r.codiceFiscale}</td>
+          <td>${r.profiloSelezionato}</td>
+          <td>${d}</td>
+          <td class="text-center">
+            <button class="btn btn-sm btn-outline-danger" onclick="rguTerminate('${r.idTransazione}', '${r.ruoloControllato}')"><i class="fas fa-trash"></i></button>
+          </td>
+        </tr>`;
+    });
+  }
+
+  if (storico.length === 0) tbS.innerHTML = '<tr><td colspan="5" class="text-center">Nessun dato storico.</td></tr>';
+  else {
+    storico.forEach(r => {
+      const dIn = new Date(r.dataAttivazione).toLocaleDateString('it-IT');
+      const dOut = new Date(r.dataCessazione).toLocaleDateString('it-IT');
+      tbS.innerHTML += `
+        <tr>
+          <td class="fw-bold text-muted">${r.ruoloControllato}</td>
+          <td>${r.cognome} ${r.nome}</td>
+          <td>${r.codiceFiscale}</td>
+          <td>${dIn}</td>
+          <td>${dOut}</td>
+        </tr>`;
+    });
+  }
+}
+
+function rguRenderAdminTable(report) {
+  const tb = document.getElementById('rgu-tbody-admin');
+  tb.innerHTML = '';
+  report.forEach(r => {
+    const badgeRgu = r.statoRgu === 'ATTIVO' ? 'bg-success' : 'bg-danger';
+    let badgeRca = 'bg-danger';
+    if (r.statoRca === 'ATTIVO') badgeRca = 'bg-success';
+    else if (r.statoRca === 'PARZIALE') badgeRca = 'bg-warning text-dark';
+
+    tb.innerHTML += `
+      <tr>
+        <td class="fw-bold">${escapeHtml(r.denominazione)}</td>
+        <td class="text-center"><span class="badge ${badgeRgu}">${r.statoRgu}</span></td>
+        <td class="text-center"><span class="badge ${badgeRca}">${r.statoRca}</span></td>
+        <td class="text-center"><button class="btn btn-sm btn-primary" onclick="showToast('Dettaglio in sviluppo', 'info')"><i class="fas fa-search"></i></button></td>
+      </tr>`;
+  });
+}
+</script>

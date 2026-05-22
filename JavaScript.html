@@ -16,7 +16,7 @@
   let inactivityTimer;
 
 const MODULES_CONFIG = {
-    'RCA': { status: 'SOON', msg: 'Servizio in attivazione.' },
+    'RCA': { status: 'ACTIVE', action: openRguRcaModule },
     'CESSAZIONI': { status: 'ACTIVE', action: openCessazioniModule },
     'BUDGET_ORG': { status: 'DYNAMIC', action: openBudgetOrganicoModule },
     'BUDGET_ASS': { status: 'SOON', msg: 'Servizio in attivazione.' },

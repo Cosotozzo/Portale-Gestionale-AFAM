@@ -29,7 +29,8 @@ function getEnvironmentConfig() {
   return {
     MASTER_ID: props.getProperty('ID_MASTER' + suffix),
     ID_BUDGETORGANICO: props.getProperty('ID_BUDGETORGANICO' + suffix),
-    ID_CESSAZIONI: props.getProperty('ID_CESSAZIONI' + suffix)
+    ID_CESSAZIONI: props.getProperty('ID_CESSAZIONI' + suffix),
+    ID_RGU_RCA: props.getProperty('ID_RGU_RCA' + suffix)
   };
 }
 
@@ -59,7 +60,12 @@ var DB_CONFIG = {
   // Nomi Fogli Budget
   "SHEET_BUDGET_BASE": "BUDGET_BASE",
   "SHEET_BUDGET_TRANS": "BUDGET_TRANS",
-  "SHEET_BUDGET_EXP": "BUDGET_EXP"
+  "SHEET_BUDGET_EXP": "BUDGET_EXP",
+
+  // Nomi Fogli RGU / RCA
+  "ID_RGU_RCA": CURRENT_ENV.ID_RGU_RCA,
+  "SHEET_RGU_RCA_TRANS": "RGU_RCA_TRANSACTIONS",
+  "SHEET_RGU_RCA_EXP": "RGU_RCA_EXPORT"
 };
 
 /**
