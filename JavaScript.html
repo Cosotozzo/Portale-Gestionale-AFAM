@@ -406,7 +406,7 @@ if(!document.getElementById('mand-privacy').checked || !document.getElementById(
                       if (res.success) {
 if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null) {
                              try { genericModalInstance.hide(); } catch(e){}
-                          }
+}
                           // 1. PULIZIA FORZATA DEI BACKDROP MULTIPLI (Fix Schermata Nera)
                           document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
                           
@@ -414,6 +414,16 @@ if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null
                           document.body.classList.remove('modal-open');
                           document.body.style.overflow = '';
                           document.body.style.paddingRight = '';
+                          
+                          // 3. FIX BUG SCROLL: Timeout per sovrascrivere il _resetScrollbar di Bootstrap 
+                          // che si attiva in ritardo alla fine dell'animazione di hide()
+                          setTimeout(() => {
+                              document.body.classList.remove('modal-open');
+                              document.body.style.overflow = '';
+                              document.body.style.paddingRight = '';
+                              document.body.removeAttribute('data-bs-overflow');
+                              document.body.removeAttribute('data-bs-padding-right');
+                          }, 400);
 
 // Aggiorniamo lo stato locale
                           currentUser.privacyAccepted = true;
@@ -471,10 +481,20 @@ if (typeof genericModalInstance !== 'undefined' && genericModalInstance !== null
                       toggleLoading(false);
                       if (res.success) {
                           if (genericModalInstance) genericModalInstance.hide();
+// 1. PULIZIA FORZATA
                           document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
                           document.body.classList.remove('modal-open');
                           document.body.style.overflow = '';
                           document.body.style.paddingRight = '';
+                          
+                          // 2. FIX BUG SCROLL: Timeout post-animazione Bootstrap
+                          setTimeout(() => {
+                              document.body.classList.remove('modal-open');
+                              document.body.style.overflow = '';
+                              document.body.style.paddingRight = '';
+                              document.body.removeAttribute('data-bs-overflow');
+                              document.body.removeAttribute('data-bs-padding-right');
+                          }, 400);
 
 // Aggiorniamo lo stato locale
                           currentUser.needsAnagraficaUpdate = false;
@@ -576,10 +596,20 @@ const iconElement = document.querySelector('.toggle-password[data-target="floati
 
   function executeSend() {
       if(genericModalInstance) genericModalInstance.hide();
-      const backdrop = document.querySelector('.modal-backdrop');
-      if (backdrop) backdrop.remove();
+document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
       document.body.classList.remove('modal-open');
       document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      
+      // FIX BUG SCROLL
+      setTimeout(() => {
+          document.body.classList.remove('modal-open');
+          document.body.style.overflow = '';
+          document.body.style.paddingRight = '';
+          document.body.removeAttribute('data-bs-overflow');
+          document.body.removeAttribute('data-bs-padding-right');
+      }, 400);
+      
       saveCessazioniAction('FINAL');
   }
 
