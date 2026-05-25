@@ -1191,11 +1191,11 @@ function submitBudgetRequest(token, payload) {
         // 1 singola chiamata API bulk per l'intero storico
         const transData = sheetTrans.getRange(2, 1, initialLastRow - 1, sheetTrans.getLastColumn()).getValues();
         
-        // Loop in RAM ES6
+// Loop in RAM ES6
         transData.forEach(row => {
             const tReqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
             const tCedId = String(row[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
-            const tStato = row[COL_MAP.BUDGET_TRANS.STATO];
+            const tStato = String(row[COL_MAP.BUDGET_TRANS.STATO]).trim().toUpperCase(); // Normalizzazione Zero Trust
             
             // Skip rapido per risparmiare cicli CPU (Culling)
             if (tReqId !== idCedente && tCedId !== idCedente) return;
@@ -1226,12 +1226,12 @@ function submitBudgetRequest(token, payload) {
           const deltaData = sheetTrans.getRange(initialLastRow + 1, 1, deltaRows, sheetTrans.getLastColumn()).getValues();
           
           deltaData.forEach(row => {
-              const dReqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
+const dReqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
               const dCedId = String(row[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
-              const dStato = row[COL_MAP.BUDGET_TRANS.STATO];
+              const dStato = String(row[COL_MAP.BUDGET_TRANS.STATO]).trim().toUpperCase(); // Normalizzazione Zero Trust
               
               if (dReqId !== idCedente && dCedId !== idCedente) return;
-              
+  
               let dImporto = 0;
               try { 
                   dImporto = parseFloat(JSON.parse(row[COL_MAP.BUDGET_TRANS.JSON_BLOB]).importo_richiesto) || 0; 
@@ -1743,7 +1743,7 @@ const searchRange = sheet.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheet.g
 // Controllo capienza portafoglio reiterato in fase di ACCETTAZIONE sotto lock (Prevenzione Race Condition / Variazione Budget Base)
     if (azione === 'ACCETTATA') {
       const sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
-      const baseData = sheetBase.getDataRange().getValues();
+const baseData = sheetBase.getDataRange().getValues();
       const rowCedente = baseData.find((row, idx) => idx > 0 && String(row[COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idCedente);
       const budgetInizialeCedente = rowCedente ? (parseFloat(rowCedente[COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0) : 0;
       
@@ -1755,7 +1755,7 @@ const searchRange = sheet.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheet.g
         if (idx === 0) return; // Salta header
         const tReqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
         const tCedId = String(row[COL_MAP.BUDGET_TRANS.ID_CEDENTE]).trim();
-        const tStato = row[COL_MAP.BUDGET_TRANS.STATO];
+        const tStato = String(row[COL_MAP.BUDGET_TRANS.STATO]).trim().toUpperCase(); // Normalizzazione
         
         if (tReqId !== idCedente && tCedId !== idCedente) return;
         
@@ -1767,15 +1767,18 @@ const searchRange = sheet.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheet.g
         if (tReqId === idCedente && tStato === 'ACCETTATA') entrateCedente += tImporto;
         if (tCedId === idCedente && ['ACCETTATA', 'INVIATA', 'IN_INTEGRAZIONE'].includes(tStato)) {
           // Escludiamo la transazione corrente per calcolare il saldo disponibile PRIMA di questa uscita
-          if (row[COL_MAP.BUDGET_TRANS.ID_TRANS] !== id) usciteCedente += tImporto;
+          if (String(row[COL_MAP.BUDGET_TRANS.ID_TRANS]).trim() !== String(id).trim()) {
+             usciteCedente += tImporto;
+          }
         }
       });
-      
+
       const currentImporto = parseFloat(payload.importo_richiesto) || 0;
+      if (currentImporto <= 0) throw new Error("Errore: L'importo della transazione da accettare non è valido o risulta corrotto.");
+
       const saldoDisponibile = budgetInizialeCedente + entrateCedente - usciteCedente;
-      
       if (currentImporto > saldoDisponibile) {
-        throw new Error("Saldo insufficiente al momento dell'accettazione. Il budget base è stato modificato o i fondi sono impegnati altrove.");
+        throw new Error("Saldo insufficiente al momento dell'accettazione. Il budget base è stato modificato o i fondi sono impegnati in altre operazioni.");
       }
     }
 
