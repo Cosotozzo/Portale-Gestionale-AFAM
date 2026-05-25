@@ -1065,7 +1065,7 @@ function logoutUser(token) {
  * L'aggiunta dell'underscore finale impedisce fisicamente a google.script.run 
  * di risolvere e mappare l'endpoint, bloccando l'esecuzione anonima.
  */
-function syncExportTable_() {
+function syncExportTable() {
   const lock = LockService.getScriptLock();
   try { 
     // Timeout ridotto drasticamente a 5 secondi per i job in background.
@@ -1143,8 +1143,8 @@ function submitBudgetRequest(token, payload) {
         throw new Error("Il modulo Scambio Budget è attualmente disabilitato dal Ministero. Operazione bloccata.");
     }
 
-    var userCtx = verifySessionAndGetUser(token);
-    var idRichiedente = String(userCtx.istituzioneId);
+var userCtx = verifySessionAndGetUser(token);
+    var idRichiedente = String(userCtx.istituzioneId).trim();
     var idCedente = String(payload.cedenteId).trim();
 
     // Security: Impedisce a un'istituzione di cedere fondi a se stessa
@@ -1180,7 +1180,12 @@ function submitBudgetRequest(token, payload) {
     
     // O(N) Lookup iper-veloce in RAM
     const rowCedente = baseData.find((row, idx) => idx > 0 && String(row[COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idCedente);
-    const budgetInizialeCedente = rowCedente ? (parseFloat(rowCedente[COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0) : 0;
+let budgetInizialeCedente = 0;
+    if (rowCedente) {
+        const rawB = rowCedente[COL_MAP.BUDGET_BASE.BUDGET_INIZIALE];
+        if (typeof rawB === 'number') budgetInizialeCedente = rawB;
+        else if (rawB) budgetInizialeCedente = parseFloat(String(rawB).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '')) || 0;
+    }
 
     // --- CALCOLO SALDO CEDENTE (IN RAM) ---
     let usciteCedente = 0;
@@ -1292,19 +1297,18 @@ const dReqId = String(row[COL_MAP.BUDGET_TRANS.ID_RICHIEDENTE]).trim();
 function getBudgetDashboardData(token) {
   try {
     var userCtx = verifySessionAndGetUser(token);
-    var ruolo = String(userCtx.ruolo).toUpperCase().trim();
+var ruolo = String(userCtx.ruolo).toUpperCase().trim();
     var isAdmin = (ruolo === 'ADMIN' || ruolo === 'MINISTERO');
-    var myIstId = String(userCtx.istituzioneId);
-    
+    var myIstId = String(userCtx.istituzioneId).trim();
+
     var ss = SpreadsheetApp.openById(DB_CONFIG.ID_BUDGETORGANICO);
-var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
+    var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
     
     // Ottimizzazione: Lettura Anagrafica Base con Caching Distribuito
     var cache = CacheService.getScriptCache();
-    var cachedBase = cache.get("CACHE_BUDGET_BASE");
+var cachedBase = cache.get("CACHE_BUDGET_BASE_V2");
     var mapIstituzioni = {}; 
     var listIstituzioni = [];
-    
     if (cachedBase) {
         var parsedBase = JSON.parse(cachedBase);
         mapIstituzioni = parsedBase.map;
@@ -1315,11 +1319,20 @@ var sheetTrans = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_TRANS);
         for(var i=1; i<baseData.length; i++) {
             var id = String(baseData[i][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim();
             var nome = baseData[i][COL_MAP.BUDGET_BASE.DENOMINAZIONE];
-            var budgetBase = parseFloat(baseData[i][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
+            
+            var rawBudget = baseData[i][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE];
+            var budgetBase = 0;
+            if (typeof rawBudget === 'number') {
+                budgetBase = rawBudget;
+            } else if (rawBudget) {
+                var cleanStr = String(rawBudget).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+                budgetBase = parseFloat(cleanStr) || 0;
+            }
+            
             mapIstituzioni[id] = { nome: nome, budgetBase: budgetBase };
             listIstituzioni.push({id: id, nome: nome}); // Memorizzazione globale
         }
-        cache.put("CACHE_BUDGET_BASE", JSON.stringify({map: mapIstituzioni, list: listIstituzioni}), 21600); // 6 ore di cache
+        cache.put("CACHE_BUDGET_BASE_V2", JSON.stringify({map: mapIstituzioni, list: listIstituzioni}), 21600);
     }
     
     // Estrazione finale filtrando sé stessi
@@ -1516,12 +1529,14 @@ function annullaTransazioneMinistero(token, idTrans) {
     
     // 2. PRE-CALCOLO SALDI IN MEMORIA
     const sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
-    const baseData = sheetBase.getDataRange().getValues();
+const baseData = sheetBase.getDataRange().getValues();
     let budgetInizialeAcq = 0;
     
     for(let i=1; i<baseData.length; i++) {
         if(String(baseData[i][COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idAcquirente) {
-            budgetInizialeAcq = parseFloat(baseData[i][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0;
+            let rawB = baseData[i][COL_MAP.BUDGET_BASE.BUDGET_INIZIALE];
+            if (typeof rawB === 'number') budgetInizialeAcq = rawB;
+            else if (rawB) budgetInizialeAcq = parseFloat(String(rawB).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '')) || 0;
             break;
         }
     }
@@ -1744,8 +1759,14 @@ const searchRange = sheet.getRange(1, COL_MAP.BUDGET_TRANS.ID_TRANS + 1, sheet.g
     if (azione === 'ACCETTATA') {
       const sheetBase = ss.getSheetByName(DB_CONFIG.SHEET_BUDGET_BASE);
 const baseData = sheetBase.getDataRange().getValues();
-      const rowCedente = baseData.find((row, idx) => idx > 0 && String(row[COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idCedente);
-      const budgetInizialeCedente = rowCedente ? (parseFloat(rowCedente[COL_MAP.BUDGET_BASE.BUDGET_INIZIALE]) || 0) : 0;
+const rowCedente = baseData.find((row, idx) => idx > 0 && String(row[COL_MAP.BUDGET_BASE.ID_ISTITUZIONE]).trim() === idCedente);
+      
+      let budgetInizialeCedente = 0;
+      if (rowCedente) {
+          const rawB = rowCedente[COL_MAP.BUDGET_BASE.BUDGET_INIZIALE];
+          if (typeof rawB === 'number') budgetInizialeCedente = rawB;
+          else if (rawB) budgetInizialeCedente = parseFloat(String(rawB).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '')) || 0;
+      }
       
       let usciteCedente = 0;
       let entrateCedente = 0;
@@ -1814,7 +1835,7 @@ return { success: false, message: e.message };
  * L'aggiunta dell'underscore finale impedisce fisicamente a google.script.run 
  * di risolvere e mappare l'endpoint, bloccando l'esecuzione anonima.
  */
-function syncBudgetExportTable_() {
+function syncBudgetExportTable() {
   const lock = LockService.getScriptLock();
   try {
     // Timeout ridotto drasticamente a 5 secondi per i job in background.
