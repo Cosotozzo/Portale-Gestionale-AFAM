@@ -197,17 +197,30 @@ function rguRenderInstTables(attiviMap, storico) {
 
 function rguRenderAdminTable(report) {
   const tb = document.getElementById('rgu-tbody-admin');
-tb.innerHTML += `
+  if (!tb) return;
+  tb.innerHTML = ''; // Svuota la tabella prima di appenderne i nuovi elementi
+
+  if (!report || report.length === 0) {
+    tb.innerHTML = '<tr><td colspan="4" class="text-center text-muted p-3">Nessun dato disponibile nel report.</td></tr>';
+    return;
+  }
+
+  report.forEach(r => {
+    // Definizione dinamica e sicura delle classi CSS per i Badge Ministeriali
+    let badgeRgu = (r.statoRgu === 'ATTIVO') ? 'bg-success' : 'bg-secondary';
+    let badgeRca = (r.statoRca === 'ATTIVO') ? 'bg-success' : ((r.statoRca === 'PARZIALE') ? 'bg-warning text-dark' : 'bg-secondary');
+
+    tb.innerHTML += `
       <tr>
         <td class="fw-bold">${escapeHtml(r.denominazione)}</td>
         <td class="text-center"><span class="badge ${badgeRgu}">${r.statoRgu}</span></td>
         <td class="text-center"><span class="badge ${badgeRca}">${r.statoRca}</span></td>
-<td class="text-center">
+        <td class="text-center">
           <button class="btn btn-sm btn-primary" onclick="rguShowInstitutionDetail('${r.id}')" title="Ispeziona Dettagli">
             <i class="fas fa-search-plus"></i>
           </button>
         </td>
-</tr>`;
+      </tr>`;
   });
 }
 

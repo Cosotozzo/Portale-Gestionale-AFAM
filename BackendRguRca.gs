@@ -402,4 +402,3 @@ function syncRguRcaExport_() {
     lock.releaseLock();
   }
 }
-// --- FINE CREAZIONE NUOVO FILE ---
