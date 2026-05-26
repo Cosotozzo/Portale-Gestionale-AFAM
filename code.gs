@@ -26,11 +26,12 @@ function getEnvironmentConfig() {
   // LOG di sicurezza visibile solo negli screenshot/debug dell'editor
   console.log(`[SISTEMA AFAM] Boot in modalità: ${isDevEnv ? 'SANDBOX' : 'PRODUZIONE'}`);
 
-  return {
+return {
     MASTER_ID: props.getProperty('ID_MASTER' + suffix),
     ID_BUDGETORGANICO: props.getProperty('ID_BUDGETORGANICO' + suffix),
     ID_CESSAZIONI: props.getProperty('ID_CESSAZIONI' + suffix),
-    ID_RGU_RCA: props.getProperty('ID_RGU_RCA' + suffix)
+    ID_RGU_RCA: props.getProperty('ID_RGU_RCA' + suffix),
+    SUFFIX: suffix
   };
 }
 
@@ -194,7 +195,7 @@ function isScambioBudgetAttivo() {
   try {
     Logger.log("[MASTER SWITCH] Lettura stato Scambio Budget.");
     var props = PropertiesService.getScriptProperties();
-    var status = props.getProperty('SCAMBIO_BUDGET_ATTIVO');
+var status = props.getProperty('SCAMBIO_BUDGET_ATTIVO' + CURRENT_ENV.SUFFIX);
     return status === 'TRUE';
   } catch(e) {
     Logger.log("[ERRORE] ScriptProperties irraggiungibili: " + e.message);
@@ -1390,7 +1391,7 @@ var cachedBase = cache.get("CACHE_BUDGET_BASE_V2");
         finalReport.sort(function(a,b) { return a.nome.localeCompare(b.nome); });
 
         var props = PropertiesService.getScriptProperties();
-        var isAttivo = props.getProperty('SCAMBIO_BUDGET_ATTIVO') === 'TRUE';
+var isAttivo = props.getProperty('SCAMBIO_BUDGET_ATTIVO' + CURRENT_ENV.SUFFIX) === 'TRUE';
         
         return { success: true, isAdmin: true, report: finalReport, isAttivo: isAttivo };
         
@@ -1484,7 +1485,7 @@ function toggleScambioBudget(token, newState) {
         
         var props = PropertiesService.getScriptProperties();
         // Converte in stringa 'TRUE' o 'FALSE'
-        props.setProperty('SCAMBIO_BUDGET_ATTIVO', newState ? 'TRUE' : 'FALSE');
+props.setProperty('SCAMBIO_BUDGET_ATTIVO' + CURRENT_ENV.SUFFIX, newState ? 'TRUE' : 'FALSE');
         
         return { success: true, message: newState ? "Modulo ATTIVATO." : "Modulo DISATTIVATO." };
     } catch(e) {
