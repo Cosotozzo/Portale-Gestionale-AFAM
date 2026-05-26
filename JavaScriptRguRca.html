@@ -15,6 +15,7 @@ function openRguRcaModule() {
       if (res.isAdmin) {
         document.getElementById('view-rgu-admin').classList.remove('hidden');
         rguRenderAdminTable(res.reportData);
+        document.getElementById('rgu-toggle-modulo').checked = res.isAttivo;
       } else {
         document.getElementById('view-rgu-inst').classList.remove('hidden');
         document.getElementById('rgu-denom-ist').innerText = res.denom;
@@ -196,20 +197,104 @@ function rguRenderInstTables(attiviMap, storico) {
 
 function rguRenderAdminTable(report) {
   const tb = document.getElementById('rgu-tbody-admin');
-  tb.innerHTML = '';
-  report.forEach(r => {
-    const badgeRgu = r.statoRgu === 'ATTIVO' ? 'bg-success' : 'bg-danger';
-    let badgeRca = 'bg-danger';
-    if (r.statoRca === 'ATTIVO') badgeRca = 'bg-success';
-    else if (r.statoRca === 'PARZIALE') badgeRca = 'bg-warning text-dark';
-
-    tb.innerHTML += `
+tb.innerHTML += `
       <tr>
         <td class="fw-bold">${escapeHtml(r.denominazione)}</td>
         <td class="text-center"><span class="badge ${badgeRgu}">${r.statoRgu}</span></td>
         <td class="text-center"><span class="badge ${badgeRca}">${r.statoRca}</span></td>
-        <td class="text-center"><button class="btn btn-sm btn-primary" onclick="showToast('Dettaglio in sviluppo', 'info')"><i class="fas fa-search"></i></button></td>
-      </tr>`;
+<td class="text-center">
+          <button class="btn btn-sm btn-primary" onclick="rguShowInstitutionDetail('${r.id}')" title="Ispeziona Dettagli">
+            <i class="fas fa-search-plus"></i>
+          </button>
+        </td>
+</tr>`;
   });
+}
+
+function rguToggleModulo(checked) {
+  toggleLoading(true);
+  google.script.run
+    .withSuccessHandler(res => {
+      toggleLoading(false);
+      if (res.success) {
+        showToast(res.message, 'success');
+      } else {
+        showToast(res.message, 'error');
+        document.getElementById('rgu-toggle-modulo').checked = !checked;
+      }
+    })
+    .withFailureHandler(err => {
+      toggleLoading(false);
+      showToast(err.message, 'error');
+      document.getElementById('rgu-toggle-modulo').checked = !checked;
+    })
+    .toggleRguRcaModulo(currentUser.token, checked);
+}
+
+function rguShowInstitutionDetail(idIst) {
+  toggleLoading(true);
+  google.script.run
+    .withSuccessHandler(res => {
+      toggleLoading(false);
+      if (!res.success) return showToast(res.message, 'error');
+
+      // Impostazione titolo dinamico della modale
+      document.getElementById('modalDettagliRguRcaLabel').innerText = `Dettaglio Copertura RGU / RCA - ${res.denom}`;
+
+      const tbA = document.getElementById('rgu-modal-tbody-attivi');
+      const tbS = document.getElementById('rgu-modal-tbody-storico');
+      tbA.innerHTML = '';
+      tbS.innerHTML = '';
+
+      // Rendering Soggetti Attivi
+      if (res.attivi.length === 0) {
+        tbA.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-3">Nessun responsabile attivo per questa istituzione.</td></tr>';
+      } else {
+        res.attivi.forEach(r => {
+          const dNom = new Date(r.dataAttivazione).toLocaleDateString('it-IT');
+          let condizionali = '-';
+          if (r.profiloSelezionato === 'Docente') {
+            condizionali = `<strong>Direzione:</strong> ${r.qualificaDirettivaDocente || 'N/D'}<br><small class="text-muted text-wrap">Motivazione: ${r.notaGiustificativaDocente || ''}</small>`;
+          } else if (r.flagIncaricoCdaAdInterim) {
+            condizionali = `<span class="badge bg-warning text-dark"><i class="fas fa-gavel me-1"></i>Delibera CdA (Ad Interim)</span>`;
+          }
+          tbA.innerHTML += `
+            <tr>
+              <td class="fw-bold text-primary">${r.ruoloControllato}</td>
+              <td>${r.cognome} ${r.nome}</td>
+              <td><code>${r.codiceFiscale}</code></td>
+              <td>${r.profiloSelezionato}</td>
+              <td>${dNom}</td>
+              <td>${condizionali}</td>
+            </tr>`;
+        });
+      }
+
+      // Rendering Storico Cessazioni
+      if (res.storico.length === 0) {
+        tbS.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-3">Nessun dato d\'archivio storico per questa istituzione.</td></tr>';
+      } else {
+        res.storico.forEach(r => {
+          const dIn = new Date(r.dataAttivazione).toLocaleDateString('it-IT');
+          const dOut = r.dataCessazione ? new Date(r.dataCessazione).toLocaleDateString('it-IT') : 'N/D';
+          tbS.innerHTML += `
+            <tr>
+              <td class="fw-bold text-muted">${r.ruoloControllato}</td>
+              <td>${r.cognome} ${r.nome}</td>
+              <td><code>${r.codiceFiscale}</code></td>
+              <td>${r.profiloSelezionato}</td>
+              <td>${dIn}</td>
+              <td>${dOut}</td>
+              <td><span class="text-danger small fw-bold">${r.motivoCessazione || 'N/A'}</span></td>
+            </tr>`;
+        });
+      }
+
+      // Apertura programmata della modale Bootstrap 5
+      const modalInstance = new bootstrap.Modal(document.getElementById('modalDettagliRguRca'));
+      modalInstance.show();
+    })
+    .withFailureHandler(handleServerError)
+    .fetchInstitutionDetailForMinistero(currentUser.token, idIst);
 }
 </script>

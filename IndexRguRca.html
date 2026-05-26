@@ -92,29 +92,58 @@
   </div>
 </div>
 
-<div id="view-rgu-admin" class="w-100 hidden">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-      <h3 class="fw-bold" style="color: var(--header-main-bg);">Compliance RGU & RCA</h3>
-      <p class="text-muted">Monitoraggio adempimento istituzioni per i profili su Portale NoiPA.</p>
-    </div>
-    <button class="btn btn-primary btn-sm rounded-pill" onclick="openRguRcaModule()">
-       <i class="fas fa-sync-alt me-2"></i>Aggiorna
-    </button>
-  </div>
-  <div class="card border-0 shadow-sm rounded-custom mb-5">
-    <div class="table-responsive">
-       <table class="table table-hover align-middle mb-0">
-          <thead class="table-light text-uppercase small text-muted">
-             <tr>
-                <th>Istituzione</th>
-                <th class="text-center">Stato RGU (Req: 1)</th>
-                <th class="text-center">Stato RCA (Req: 2)</th>
-                <th class="text-center">Dettagli</th>
-             </tr>
-          </thead>
-          <tbody id="rgu-tbody-admin"></tbody>
+<tbody id="rgu-tbody-admin"></tbody>
        </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modalDettagliRguRca" tabindex="-1" aria-labelledby="modalDettagliRguRcaLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content border-0 shadow rounded-custom">
+      <div class="modal-header bg-light border-bottom p-3">
+        <h5 class="modal-title fw-bold text-primary" id="modalDettagliRguRcaLabel">Dettaglio Copertura RGU / RCA</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <h5 class="fw-bold text-success mb-3"><i class="fas fa-user-check me-2"></i>Soggetti Attualmente Attivi</h5>
+        <div class="table-responsive mb-4 border rounded shadow-sm bg-white">
+          <table class="table align-middle mb-0 table-sm">
+            <thead class="table-light small fw-bold text-muted">
+              <tr>
+                <th>Ruolo</th>
+                <th>Nominativo</th>
+                <th>Codice Fiscale</th>
+                <th>Profilo</th>
+                <th>Data Nomina</th>
+                <th>Vincoli / Dettagli Condizionali</th>
+              </tr>
+            </thead>
+            <tbody id="rgu-modal-tbody-attivi"></tbody>
+          </table>
+        </div>
+
+        <h5 class="fw-bold text-secondary mb-3"><i class="fas fa-history me-2"></i>Storico Nomine e Cessazioni</h5>
+        <div class="table-responsive border rounded shadow-sm bg-white">
+          <table class="table align-middle mb-0 table-sm">
+            <thead class="table-light small fw-bold text-muted">
+              <tr>
+                <th>Ruolo</th>
+                <th>Nominativo</th>
+                <th>Codice Fiscale</th>
+                <th>Profilo Profilo</th>
+                <th>Data Inizio</th>
+                <th>Data Fine</th>
+                <th>Causa Cessazione</th>
+              </tr>
+            </thead>
+            <tbody id="rgu-modal-tbody-storico"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer bg-light border-top">
+        <button type="button" class="btn btn-secondary px-4 fw-bold rounded-pill" data-bs-dismiss="modal">Chiudi Ispezione</button>
+      </div>
     </div>
   </div>
 </div>

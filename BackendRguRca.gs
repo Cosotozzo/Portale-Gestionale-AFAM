@@ -69,7 +69,11 @@ function saveRguRcaNominee(token, payload) {
   try {
     const userCtx = verifySessionAndGetUser(token);
     const idIst = String(userCtx.istituzioneId).trim();
-    
+
+if (!isRguRcaAttivo() && !['ADMIN', 'MINISTERO'].includes(String(userCtx.ruolo).toUpperCase())) {
+      throw new Error("Operazione negata: Il modulo di Gestione RGU/RCA è momentaneamente disabilitato dal Ministero.");
+    }
+
     // Validazione Dominio Server-Side
     if (['Funzionario', 'Assistente'].includes(payload.profiloSelezionato) && payload.flagIncaricoCdaAdInterim !== true) {
       throw new Error("Operazione rifiutata: L'incarico Ad-Interim da parte del CdA è obbligatorio per Funzionari e Assistenti.");
@@ -157,7 +161,11 @@ function terminateRguRcaNominee(token, payload) {
   try {
     const userCtx = verifySessionAndGetUser(token);
     const idIst = String(userCtx.istituzioneId).trim();
-    
+
+if (!isRguRcaAttivo() && !['ADMIN', 'MINISTERO'].includes(String(userCtx.ruolo).toUpperCase())) {
+      throw new Error("Operazione negata: Il modulo di Gestione RGU/RCA è momentaneamente disabilitato dal Ministero.");
+    }
+
     if (!lock.tryLock(30000)) throw new Error("Sistema occupato. Riprovare.");
 
     const ssDb = SpreadsheetApp.openById(DB_CONFIG.ID_RGU_RCA);
@@ -234,7 +242,83 @@ function fetchMinisteroRguRcaReport(token) {
        });
    }
    
-   return { success: true, isAdmin: true, reportData: report };
+const props = PropertiesService.getScriptProperties();
+   const isAttivo = props.getProperty('RGU_RCA_ATTIVO' + CURRENT_ENV.SUFFIX) !== 'FALSE';
+   return { success: true, isAdmin: true, reportData: report, isAttivo: isAttivo };
+}
+
+function isRguRcaAttivo() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    return props.getProperty('RGU_RCA_ATTIVO' + CURRENT_ENV.SUFFIX) !== 'FALSE';
+  } catch (e) {
+    return false;
+  }
+}
+
+function toggleRguRcaModulo(token, newState) {
+  try {
+    const userCtx = verifySessionAndGetUser(token);
+    if (String(userCtx.ruolo).toUpperCase() !== 'ADMIN' && String(userCtx.ruolo).toUpperCase() !== 'MINISTERO') {
+      throw new Error("Non autorizzato ad eseguire questa operazione.");
+    }
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty('RGU_RCA_ATTIVO' + CURRENT_ENV.SUFFIX, newState ? 'TRUE' : 'FALSE');
+    return { success: true, message: newState ? "Modulo RGU/RCA ATTIVATO globalmente." : "Modulo RGU/RCA DISATTIVATO globalmente." };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function fetchInstitutionDetailForMinistero(token, idIstituzione) {
+  try {
+    const userCtx = verifySessionAndGetUser(token);
+    const ruolo = String(userCtx.ruolo).toUpperCase();
+    if (ruolo !== 'ADMIN' && ruolo !== 'MINISTERO') {
+      throw new Error("Accesso negato: Funzione riservata esclusivamente agli amministratori ministeriali.");
+    }
+    
+    const idIst = String(idIstituzione).trim();
+    const ssDb = SpreadsheetApp.openById(DB_CONFIG.ID_RGU_RCA);
+    const sheetTrans = ssDb.getSheetByName(DB_CONFIG.SHEET_RGU_RCA_TRANS);
+    const transData = sheetTrans ? sheetTrans.getDataRange().getValues() : [];
+
+    const activeNominations = {};
+    const storicoList = [];
+
+    // Pattern Event Sourcing per Ricostruzione Stato Istituzione Selezionata
+    for (let i = 1; i < transData.length; i++) {
+      if (String(transData[i][1]).trim() !== idIst) continue;
+      const idTrans = transData[i][0];
+      const stato = transData[i][3];
+      const payload = JSON.parse(transData[i][4]);
+      payload.ruoloControllato = transData[i][2];
+
+      if (stato === "ATTIVO") {
+        payload.idTransazione = idTrans;
+        activeNominations[idTrans] = payload;
+      } else if (stato === "CESSATO") {
+        const originalId = payload.idTransNominaOriginale;
+        if (activeNominations[originalId]) {
+          const storicized = Object.assign({}, activeNominations[originalId]);
+          storicized.dataCessazione = payload.dataCessazione;
+          storicized.motivoCessazione = payload.motivoCessazione || "N/A";
+          storicoList.push(storicized);
+          delete activeNominations[originalId];
+        }
+      }
+    }
+
+    storicoList.sort((a, b) => new Date(b.dataCessazione) - new Date(a.dataCessazione));
+    return { 
+      success: true, 
+      attivi: Object.values(activeNominations), 
+      storico: storicoList, 
+      denom: getInstitutionNameById(idIst) 
+    };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 function syncRguRcaExport_() {
