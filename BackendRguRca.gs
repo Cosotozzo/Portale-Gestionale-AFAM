@@ -74,12 +74,14 @@ if (!isRguRcaAttivo() && !['ADMIN', 'MINISTERO'].includes(String(userCtx.ruolo).
       throw new Error("Operazione negata: Il modulo di Gestione RGU/RCA è momentaneamente disabilitato dal Ministero.");
     }
 
-    // Validazione Dominio Server-Side
-    if (['Funzionario', 'Assistente'].includes(payload.profiloSelezionato) && payload.flagIncaricoCdaAdInterim !== true) {
+// Validazione Dominio Server-Side Resiliente (Zero Trust Architecture)
+    const profNorm = String(payload.profiloSelezionato || "").trim().toLowerCase();
+
+    if ((profNorm.includes('funzionario') || profNorm.includes('assistente')) && payload.flagIncaricoCdaAdInterim !== true) {
       throw new Error("Operazione rifiutata: L'incarico Ad-Interim da parte del CdA è obbligatorio per Funzionari e Assistenti.");
     }
     
-    if (payload.profiloSelezionato === 'Docente') {
+    if (profNorm.includes('docente')) {
       if (!payload.qualificaDirettivaDocente || !['Direttore dell\'Istituto', 'Vicedirettore dell\'Istituto'].includes(payload.qualificaDirettivaDocente)) {
         throw new Error("Operazione rifiutata: Per i profili Docente è obbligatorio specificare la qualifica di direzione (Direttore/Vicedirettore) e compilare la nota di giustificazione.");
       }

@@ -56,15 +56,38 @@ function rguSetupAutocomplete() {
       a.style.cursor = 'pointer';
       a.innerHTML = `<strong>${item.cognome} ${item.nome}</strong> <span class="text-muted small">(${item.cf})</span>`;
       
-      a.addEventListener('click', () => {
+a.addEventListener('click', () => {
         input.value = `${item.cognome} ${item.nome}`;
         list.classList.remove('show');
         rguSelectedEmp = item;
         const profSel = document.getElementById('rgu-profilo-sel');
         
-        // Match profilo
-        let match = Array.from(profSel.options).find(o => o.value.toLowerCase() === item.profilo.toLowerCase());
-        if (match) profSel.value = match.value;
+        // Pulizia di eventuali opzioni dinamiche residue generate in precedenza
+        const oldDynamicOpt = profSel.querySelector('.dynamic-profile-option');
+        if (oldDynamicOpt) oldDynamicOpt.remove();
+
+        if (item.profilo) {
+          const profTarget = item.profilo.trim();
+          // 1. Ricerca di un abbinamento esatto (case-insensitive)
+          let match = Array.from(profSel.options).find(o => o.value.toLowerCase() === profTarget.toLowerCase());
+          
+          // 2. Fallback: Ricerca di un abbinamento parziale intelligente (es: "Docente Associato" contiene "Docente")
+          if (!match && profTarget !== "Dato mancante, necessaria verifica") {
+            match = Array.from(profSel.options).find(o => o.value && (profTarget.toLowerCase().includes(o.value.toLowerCase()) || o.value.toLowerCase().includes(profTarget.toLowerCase())));
+          }
+          
+          if (match) {
+            profSel.value = match.value;
+          } else if (profTarget !== "Dato mancante, necessaria verifica") {
+            // 3. Fallback Estremo: Se la stringa in colonna F è totalmente personalizzata, la iniettiamo per popolarla direttamente
+            const newOpt = document.createElement('option');
+            newOpt.value = profTarget;
+            newOpt.text = profTarget;
+            newOpt.className = 'dynamic-profile-option';
+            profSel.appendChild(newOpt);
+            profSel.value = profTarget;
+          }
+        }
         rguHandleConditionalFields();
       });
       li.appendChild(a);
@@ -75,16 +98,17 @@ function rguSetupAutocomplete() {
 }
 
 function rguHandleConditionalFields() {
-  const prof = document.getElementById('rgu-profilo-sel').value;
+  const profValue = document.getElementById('rgu-profilo-sel').value;
+  const prof = profValue ? profValue.toLowerCase() : '';
   const boxCda = document.getElementById('rgu-ad-interim-box');
   const boxDoc = document.getElementById('rgu-docente-box');
   
   boxCda.classList.add('hidden');
   boxDoc.classList.add('hidden');
 
-  if (prof === 'Funzionario' || prof === 'Assistente') {
+  if (prof.includes('funzionario') || prof.includes('assistente')) {
     boxCda.classList.remove('hidden');
-  } else if (prof === 'Docente') {
+  } else if (prof.includes('docente')) {
     boxDoc.classList.remove('hidden');
   }
   rguValidateForm();
@@ -92,14 +116,15 @@ function rguHandleConditionalFields() {
 
 function rguValidateForm() {
   const btn = document.getElementById('rgu-btn-submit');
-  const prof = document.getElementById('rgu-profilo-sel').value;
+  const profValue = document.getElementById('rgu-profilo-sel').value;
+  const prof = profValue ? profValue.toLowerCase() : '';
   const target = document.getElementById('rgu-ruolo-target').value;
-  let isValid = !!(rguSelectedEmp && prof && target);
+  let isValid = !!(rguSelectedEmp && profValue && target);
 
-  if (prof === 'Funzionario' || prof === 'Assistente') {
+  if (prof.includes('funzionario') || prof.includes('assistente')) {
     if (!document.getElementById('rgu-chk-cda').checked) isValid = false;
   }
-  if (prof === 'Docente') {
+  if (prof.includes('docente')) {
     const qual = document.getElementById('rgu-docente-qualifica').value;
     const nota = document.getElementById('rgu-docente-nota').value.trim();
     if (!qual || nota.length < 10) isValid = false;
@@ -125,8 +150,9 @@ function rguSubmitNomina() {
       if (res.success) {
         showToast(res.message, 'success');
         // Reset form e Ricarica Dati
-        document.getElementById('rgu-search-emp').value = '';
+document.getElementById('rgu-search-emp').value = '';
         document.getElementById('rgu-ruolo-target').value = '';
+        document.getElementById('rgu-profilo-sel').value = '';
         document.getElementById('rgu-chk-cda').checked = false;
         document.getElementById('rgu-docente-nota').value = '';
         rguSelectedEmp = null;
